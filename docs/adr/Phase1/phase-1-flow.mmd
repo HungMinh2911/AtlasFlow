@@ -1,0 +1,69 @@
+%%{init: {"securityLevel":"loose","theme":"base","themeVariables":{"background":"#ffffff","primaryColor":"#f8fafc","primaryTextColor":"#0f172a","nodeTextColor":"#0f172a","textColor":"#0f172a","edgeLabelBackground":"#ffffff","primaryBorderColor":"#64748b","lineColor":"#64748b","secondaryColor":"#fef3c7","tertiaryColor":"#dbeafe","fontFamily":"Arial, sans-serif"}}}%%
+flowchart TD
+    A["<span style='color:#000000 !important;font-weight:700'>API Client</span>"] -->|<span style='color:#000000 !important;font-weight:700'>POST /jobs + Idempotency-Key</span>| B["<span style='color:#000000 !important;font-weight:700'>Product Contract</span>"]
+    B --> C{"<span style='color:#000000 !important;font-weight:700'>Validate request</span>"}
+    C -->|<span style='color:#000000 !important;font-weight:700'>invalid body</span>| E1["<span style='color:#000000 !important;font-weight:700'>400 VALIDATION_ERROR</span>"]
+    C -->|<span style='color:#000000 !important;font-weight:700'>project missing</span>| E2["<span style='color:#000000 !important;font-weight:700'>404 PROJECT_NOT_FOUND</span>"]
+    C -->|<span style='color:#000000 !important;font-weight:700'>workflow missing</span>| E3["<span style='color:#000000 !important;font-weight:700'>404 WORKFLOW_NOT_FOUND</span>"]
+    C -->|<span style='color:#000000 !important;font-weight:700'>workflow not in project</span>| E4["<span style='color:#000000 !important;font-weight:700'>409 WORKFLOW_PROJECT_MISMATCH</span>"]
+    C -->|<span style='color:#000000 !important;font-weight:700'>valid</span>| D{"<span style='color:#000000 !important;font-weight:700'>Check idempotency key</span>"}
+    D -->|<span style='color:#000000 !important;font-weight:700'>same key + same fingerprint</span>| R["<span style='color:#000000 !important;font-weight:700'>Return existing logical job</span>"]
+    D -->|<span style='color:#000000 !important;font-weight:700'>same key + different fingerprint</span>| E5["<span style='color:#000000 !important;font-weight:700'>409 IDEMPOTENCY_KEY_REUSE</span>"]
+    D -->|<span style='color:#000000 !important;font-weight:700'>new key</span>| F["<span style='color:#000000 !important;font-weight:700'>Create Job: SUBMITTED</span>"]
+    F --> G["<span style='color:#000000 !important;font-weight:700'>Return 202 Accepted + job_id</span>"]
+    G --> H["<span style='color:#000000 !important;font-weight:700'>Dispatcher / local simulation</span>"]
+    H --> I["<span style='color:#000000 !important;font-weight:700'>QUEUED</span>"]
+    I --> J["<span style='color:#000000 !important;font-weight:700'>Worker claims job</span>"]
+    J --> K["<span style='color:#000000 !important;font-weight:700'>RUNNING</span>"]
+    K --> L{"<span style='color:#000000 !important;font-weight:700'>Execution result</span>"}
+    L -->|<span style='color:#000000 !important;font-weight:700'>success</span>| M["<span style='color:#000000 !important;font-weight:700'>SUCCEEDED</span>"]
+    L -->|<span style='color:#000000 !important;font-weight:700'>failure</span>| N["<span style='color:#000000 !important;font-weight:700'>FAILED</span>"]
+    N --> O{"<span style='color:#000000 !important;font-weight:700'>Retry policy?</span>"}
+    O -->|<span style='color:#000000 !important;font-weight:700'>yes</span>| I
+    O -->|<span style='color:#000000 !important;font-weight:700'>no</span>| P["<span style='color:#000000 !important;font-weight:700'>Terminal failure</span>"]
+    A -->|<span style='color:#000000 !important;font-weight:700'>GET /jobs/:jobId</span>| Q["<span style='color:#000000 !important;font-weight:700'>Poll status</span>"]
+    Q --> G
+    A -->|<span style='color:#000000 !important;font-weight:700'>POST /jobs/:jobId/cancel</span>| S{"<span style='color:#000000 !important;font-weight:700'>State allows cancel?</span>"}
+    S -->|<span style='color:#000000 !important;font-weight:700'>yes and confirmed</span>| T["<span style='color:#000000 !important;font-weight:700'>CANCELLED</span>"]
+    S -->|<span style='color:#000000 !important;font-weight:700'>no / race</span>| E6["<span style='color:#000000 !important;font-weight:700'>409 JOB_NOT_CANCELLABLE</span>"]
+
+    classDef endpoint fill:#f8fafc,stroke:#64748b,color:#0f172a,stroke-width:2px;
+    classDef decision fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:2px;
+    classDef success fill:#dcfce7,stroke:#16a34a,color:#166534,stroke-width:2px;
+    classDef error fill:#fee2e2,stroke:#dc2626,color:#991b1b,stroke-width:2px;
+    classDef state fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:2px;
+    class A,B,G,H,J,Q,R endpoint;
+    class C,D,L,O,S decision;
+    class M,T success;
+    class E1,E2,E3,E4,E5,E6 error;
+    class F,I,K,N,P state;
+
+    style A fill:#f8fafc,stroke:#64748b,color:#000000;
+    style B fill:#f8fafc,stroke:#64748b,color:#000000;
+    style G fill:#f8fafc,stroke:#64748b,color:#000000;
+    style H fill:#f8fafc,stroke:#64748b,color:#000000;
+    style J fill:#f8fafc,stroke:#64748b,color:#000000;
+    style Q fill:#f8fafc,stroke:#64748b,color:#000000;
+    style R fill:#f8fafc,stroke:#64748b,color:#000000;
+    style C fill:#fef3c7,stroke:#d97706,color:#000000;
+    style D fill:#fef3c7,stroke:#d97706,color:#000000;
+    style L fill:#fef3c7,stroke:#d97706,color:#000000;
+    style O fill:#fef3c7,stroke:#d97706,color:#000000;
+    style S fill:#fef3c7,stroke:#d97706,color:#000000;
+    style M fill:#dcfce7,stroke:#16a34a,color:#000000;
+    style T fill:#dcfce7,stroke:#16a34a,color:#000000;
+    style E1 fill:#fee2e2,stroke:#dc2626,color:#000000;
+    style E2 fill:#fee2e2,stroke:#dc2626,color:#000000;
+    style E3 fill:#fee2e2,stroke:#dc2626,color:#000000;
+    style E4 fill:#fee2e2,stroke:#dc2626,color:#000000;
+    style E5 fill:#fee2e2,stroke:#dc2626,color:#000000;
+    style E6 fill:#fee2e2,stroke:#dc2626,color:#000000;
+    style F fill:#dbeafe,stroke:#2563eb,color:#000000;
+    style I fill:#dbeafe,stroke:#2563eb,color:#000000;
+    style K fill:#dbeafe,stroke:#2563eb,color:#000000;
+    style N fill:#dbeafe,stroke:#2563eb,color:#000000;
+    style P fill:#dbeafe,stroke:#2563eb,color:#000000;
+
+    linkStyle default stroke:#94a3b8,stroke-width:1.5px;
+
+    %% Phase 1 scope: local contract, no AWS, no worker implementation required.

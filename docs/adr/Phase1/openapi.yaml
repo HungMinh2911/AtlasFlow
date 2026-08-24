@@ -1,0 +1,438 @@
+openapi: 3.0.3
+info:
+  title: AtlasFlow Product Contract API
+  version: 0.1.0-phase1
+  description: |
+    Local-first API draft for the Phase 1 product contract.
+    Authentication, persistence implementation and infrastructure are intentionally
+    outside the Phase 1 scope.
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development
+tags:
+  - name: Projects
+  - name: Workflows
+  - name: Jobs
+paths:
+  /projects:
+    post:
+      tags: [Projects]
+      operationId: createProject
+      summary: Create a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/OrganizationNotFound'
+        '409':
+          description: Project name already exists in the organization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /workflows:
+    post:
+      tags: [Workflows]
+      operationId: createWorkflow
+      summary: Create a workflow draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkflowRequest'
+      responses:
+        '201':
+          description: Workflow draft created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workflow'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/ProjectNotFound'
+
+  /workflows/{workflowId}:
+    get:
+      tags: [Workflows]
+      operationId: getWorkflow
+      summary: Get workflow contract and status
+      parameters:
+        - $ref: '#/components/parameters/WorkflowId'
+      responses:
+        '200':
+          description: Workflow found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workflow'
+        '404':
+          $ref: '#/components/responses/WorkflowNotFound'
+
+  /jobs:
+    post:
+      tags: [Jobs]
+      operationId: submitJob
+      summary: Submit a job asynchronously
+      description: |
+        Returns 202 after the job contract is accepted. It does not wait for a
+        worker to finish. A client that times out must retry with the same
+        Idempotency-Key and then poll GET /jobs/{jobId}.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitJobRequest'
+      responses:
+        '202':
+          description: Job accepted for asynchronous processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAccepted'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: Project or workflow was not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Idempotency or project/workflow conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+
+  /jobs/{jobId}:
+    get:
+      tags: [Jobs]
+      operationId: getJob
+      summary: Get current job status
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Current job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatus'
+        '404':
+          $ref: '#/components/responses/JobNotFound'
+
+  /jobs/{jobId}/cancel:
+    post:
+      tags: [Jobs]
+      operationId: cancelJob
+      summary: Request a job cancellation
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelJobRequest'
+      responses:
+        '200':
+          description: Cancellation transition confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatus'
+        '404':
+          $ref: '#/components/responses/JobNotFound'
+        '409':
+          description: Job is not cancellable or transition lost a race
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /jobs/{jobId}/retry:
+    post:
+      tags: [Jobs]
+      operationId: retryJob
+      summary: Retry a failed job
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '202':
+          description: Retry accepted and job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAccepted'
+        '404':
+          $ref: '#/components/responses/JobNotFound'
+        '409':
+          description: Retry is not allowed for the current state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Stable key for one logical submit request; reuse it after a client timeout.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        example: submit-project-123-20260823-0001
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    WorkflowId:
+      name: workflowId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    OrganizationNotFound:
+      description: Organization was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ProjectNotFound:
+      description: Project was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    WorkflowNotFound:
+      description: Workflow was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    JobNotFound:
+      description: Job was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    DependencyUnavailable:
+      description: A required dependency is temporarily unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    CreateProjectRequest:
+      type: object
+      required: [organization_id, name]
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          example: billing-automation
+    Project:
+      type: object
+      required: [id, organization_id, name, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, ARCHIVED]
+        created_at:
+          type: string
+          format: date-time
+
+    WorkflowStep:
+      type: object
+      required: [position, task_type, config]
+      properties:
+        position:
+          type: integer
+          minimum: 1
+        task_type:
+          type: string
+          minLength: 1
+        config:
+          type: object
+          additionalProperties: true
+    CreateWorkflowRequest:
+      type: object
+      required: [project_id, version, steps]
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        steps:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/WorkflowStep'
+    Workflow:
+      type: object
+      required: [id, project_id, version, status, steps]
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        status:
+          type: string
+          enum: [DRAFT, PUBLISHED, ARCHIVED]
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowStep'
+
+    SubmitJobRequest:
+      type: object
+      required: [project_id, workflow_id, input]
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        workflow_id:
+          type: string
+          format: uuid
+        input:
+          type: object
+          additionalProperties: true
+    JobAccepted:
+      type: object
+      required: [job_id, project_id, workflow_id, status, created_at, request_id]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        workflow_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [SUBMITTED, QUEUED]
+        created_at:
+          type: string
+          format: date-time
+        request_id:
+          type: string
+    JobStatus:
+      type: object
+      required: [job_id, project_id, workflow_id, status, created_at, request_id]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        workflow_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [SUBMITTED, QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED]
+        attempt:
+          type: integer
+          minimum: 0
+        error_code:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        request_id:
+          type: string
+    CancelJobRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+    ErrorResponse:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+          example: INVALID_STATE_TRANSITION
+        message:
+          type: string
+          example: Job cannot move from SUCCEEDED to RUNNING
+        request_id:
+          type: string
+          example: req_01HXYZ
+        details:
+          type: object
+          additionalProperties: true

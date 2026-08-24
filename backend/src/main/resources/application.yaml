@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: atlasflow-backend
+
+  config:
+    import: optional:file:../.env[.properties]
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/atlasflow}
+    username: ${DB_USERNAME:atlasflow}
+    password: ${DB_PASSWORD:local-dev-only-password}
