@@ -17,8 +17,10 @@ public class DatabaseTestController {
 
     @GetMapping("/db-test")
     public String testDatabase() {
-        Integer result = jdbcTemplate.queryForObject("SELECT 1", Integer.class);
+        Integer result = jdbcTemplate.queryForObject(
+                "SELECT 1",
+                Integer.class
+        );
         return "Database OK: " + result;
     }
 }
-
