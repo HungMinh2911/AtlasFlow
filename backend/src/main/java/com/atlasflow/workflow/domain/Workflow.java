@@ -18,4 +18,11 @@ public record Workflow(
                 WorkflowStatus.DRAFT
         );
     }
+
+    public Workflow publish() {
+        if (status != WorkflowStatus.DRAFT) {
+            throw new IllegalStateException("Only DRAFT workflow can be published");
+        }
+        return new Workflow(id, project_id, version, WorkflowStatus.PUBLISHED);
+    }
 }

@@ -23,4 +23,10 @@ public class DatabaseTestController {
         );
         return "Database OK: " + result;
     }
+
+    @GetMapping("/db-slow")
+    public String slowDatabaseQuery(@org.springframework.web.bind.annotation.RequestParam(defaultValue = "5") int seconds) {
+        jdbcTemplate.execute("SELECT pg_sleep(" + seconds + ")");
+        return "Slow Query Finished after " + seconds + "s";
+    }
 }

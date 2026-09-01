@@ -2,6 +2,7 @@ package com.atlasflow.shared.error;
 
 import com.atlasflow.file.domain.FileNotFoundException;
 import com.atlasflow.job.domain.JobValidationException;
+import com.atlasflow.job.domain.IdempotencyKeyReusedException;
 import com.atlasflow.job.domain.JobNotFoundException;
 import com.atlasflow.job.execution.domain.JobExecutionNotFoundException;
 import com.atlasflow.file.domain.FileUploadException;
@@ -16,10 +17,26 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ProblemDetail handleMissingRequestHeader(
+            MissingRequestHeaderException exception,
+            HttpServletRequest request
+    ) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                exception.getHeaderName() + " header is required"
+        );
+        problemDetail.setTitle("Missing request header");
+        problemDetail.setProperty("code", "VALIDATION_ERROR");
+        problemDetail.setProperty("request_id", request.getHeader("X-Request-Id"));
+        return problemDetail;
+    }
 
     @ExceptionHandler(ProjectNameAlreadyExistsException.class)
     public ProblemDetail handProjectNameExists(
@@ -181,6 +198,21 @@ public class GlobalExceptionHandler {
         return problemDetail;
     }
 
+    @ExceptionHandler(IdempotencyKeyReusedException.class)
+    public ProblemDetail handleIdempotencyKeyReused(
+            IdempotencyKeyReusedException exception,
+            HttpServletRequest request
+    ) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                "The Idempotency-Key was already used with a different request"
+        );
+        problemDetail.setTitle("Idempotency key reused");
+        problemDetail.setProperty("code", "IDEMPOTENCY_KEY_REUSED");
+        problemDetail.setProperty("request_id", request.getHeader("X-Request-Id"));
+        return problemDetail;
+    }
+
     @ExceptionHandler(JobExecutionNotFoundException.class)
     public ProblemDetail handleJobExecutionNotFound(
             JobExecutionNotFoundException notFoundException,
@@ -274,7 +306,7 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
-                HttpStatus.BAD_REQUEST,
+                HttpStatus.CONFLICT,
                 exception.getMessage()
         );
 

@@ -10,6 +10,8 @@ import com.atlasflow.job.application.port.JobRepository;
 import com.atlasflow.job.domain.Job;
 import com.atlasflow.job.domain.JobNotFoundException;
 import com.atlasflow.job.domain.JobValidationException;
+import com.atlasflow.job.domain.IdempotencyKeyReusedException;
+import com.atlasflow.outbox_events.application.OutboxEventsApplicationService;
 import com.atlasflow.project.application.port.ProjectRepository;
 import com.atlasflow.project.domain.ProjectNotExistsException;
 import com.atlasflow.workflow.application.port.WorkflowRepository;
@@ -17,11 +19,14 @@ import com.atlasflow.workflow.domain.Workflow;
 import com.atlasflow.workflow.domain.WorkflowNotFoundException;
 import com.atlasflow.workflow.domain.WorkflowStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -31,20 +36,34 @@ public class JobApplicationService {
     private final WorkflowRepository workflowRepository;
     private final FileRepository fileRepository;
     private final JobRepository jobRepository;
+    private final OutboxEventsApplicationService outboxEventsApplicationService;
 
     public JobApplicationService(
             ProjectRepository projectRepository,
             WorkflowRepository workflowRepository,
             FileRepository fileRepository,
-            JobRepository jobRepository
+            JobRepository jobRepository,
+            OutboxEventsApplicationService outboxEventsApplicationService
     ) {
         this.projectRepository = projectRepository;
         this.workflowRepository = workflowRepository;
         this.fileRepository = fileRepository;
         this.jobRepository = jobRepository;
+        this.outboxEventsApplicationService = outboxEventsApplicationService;
     }
 
     public JobResponse createJob(CreateJobRequest request) {
+        return createJob(request, generateLegacyKey(request));
+    }
+
+    @Transactional
+    public JobResponse createJob(CreateJobRequest request, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new JobValidationException("Idempotency-Key is required");
+        }
+        if (idempotencyKey.length() > 255) {
+            throw new JobValidationException("Idempotency-Key must be at most 255 characters");
+        }
         projectRepository.findProjectById(request.project_id())
                 .orElseThrow(() -> new ProjectNotExistsException(
                         request.project_id()
@@ -72,9 +91,9 @@ public class JobApplicationService {
             );
         }
 
-        if (workflow.status() != WorkflowStatus.ACTIVE) {
+        if (workflow.status() != WorkflowStatus.PUBLISHED) {
             throw new JobValidationException(
-                    "Workflow must be ACTIVE before creating a job"
+                    "Workflow must be PUBLISHED before creating a job"
             );
         }
 
@@ -84,23 +103,58 @@ public class JobApplicationService {
             );
         }
 
-        String idempotencyKey = generateIdempotencyKey(
-                workflow.id(),
-                file.id()
-        );
+        String requestFingerprint = fingerprint(request);
 
-        return jobRepository.findByIdempotencyKey(idempotencyKey)
-                .map(JobResponse::from)
+        return jobRepository.findByProjectIdAndIdempotencyKey(request.project_id(), idempotencyKey)
+                .map(existing -> {
+                    if (existing.requestFingerprint() != null
+                            && !existing.requestFingerprint().equals(requestFingerprint)) {
+                        throw new IdempotencyKeyReusedException(idempotencyKey);
+                    }
+
+                    return JobResponse.from(existing);
+                })
                 .orElseGet(() -> {
                     Job job = Job.submit(
                             UUID.randomUUID(),
                             request.project_id(),
                             workflow.id(),
                             file.id(),
-                            idempotencyKey
+                            idempotencyKey,
+                            requestFingerprint
                     );
 
-                    return JobResponse.from(jobRepository.save(job));
+                    Optional<Job> inserted = jobRepository.insertIfAbsent(job);
+                    if (inserted.isPresent()) {
+                        Job savedJob = inserted.get();
+
+                        // 2. Tạo và lưu Outbox Event (cùng transaction với Job)
+                        JsonNode payload = outboxEventsApplicationService.createPayload(
+                                savedJob.id(),
+                                savedJob.projectId(),
+                                savedJob.workflowId(),
+                                savedJob.fileId()
+                        );
+                        outboxEventsApplicationService.createOutboxEvents(
+                                "JOB",
+                                savedJob.id(),
+                                "JOB_SUBMITTED",
+                                payload
+                        );
+
+                        return JobResponse.from(savedJob);
+                    } else {
+                        // Concurrent request already inserted the job
+                        return jobRepository.findByProjectIdAndIdempotencyKey(request.project_id(), idempotencyKey)
+                                .map(existing -> {
+                                    if (existing.requestFingerprint() != null
+                                            && !existing.requestFingerprint().equals(requestFingerprint)) {
+                                        throw new IdempotencyKeyReusedException(idempotencyKey);
+                                    }
+                                    return JobResponse.from(existing);
+                                })
+                                .orElseThrow(() -> new IllegalStateException("Failed to find concurrently submitted job"));
+                    }
                 });
     }
 
@@ -114,6 +168,16 @@ public class JobApplicationService {
         return JobResponse.from(jobRepository.save(queuedJob));
     }
 
+    public JobResponse getJob(UUID jobId) {
+        return jobRepository.findById(jobId)
+                .map(JobResponse::from)
+                .orElseThrow(() -> new JobNotFoundException(jobId));
+    }
+
+
+    private String generateLegacyKey(CreateJobRequest request) {
+        return generateIdempotencyKey(request.workflow_id(), request.file_id());
+    }
 
     private String generateIdempotencyKey(
             UUID workflowId,
@@ -131,6 +195,16 @@ public class JobApplicationService {
                     "SHA-256 is not available",
                     exception
             );
+        }
+    }
+
+    private String fingerprint(CreateJobRequest request) {
+        String raw = request.project_id() + "|" + request.workflow_id() + "|" + request.file_id();
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(raw.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is not available", exception);
         }
     }
 }

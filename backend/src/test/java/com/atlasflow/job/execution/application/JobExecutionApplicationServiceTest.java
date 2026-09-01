@@ -4,10 +4,10 @@ import com.atlasflow.job.application.port.JobRepository;
 import com.atlasflow.job.domain.Job;
 import com.atlasflow.job.domain.JobStatus;
 import com.atlasflow.job.domain.JobValidationException;
-import com.atlasflow.job.execution.api.CreateJobExcutionRequest;
-import com.atlasflow.job.execution.api.JobExcutionRespone;
-import com.atlasflow.job.execution.application.port.JobExcutionIRepository;
-import com.atlasflow.job.execution.domain.JobExcution;
+import com.atlasflow.job.execution.api.CreateJobExecutionRequest;
+import com.atlasflow.job.execution.api.JobExecutionResponse;
+import com.atlasflow.job.execution.application.port.JobExecutionRepository;
+import com.atlasflow.job.execution.domain.JobExecution;
 import com.atlasflow.job.execution.domain.JobExecutionNotFoundException;
 import com.atlasflow.job.execution.domain.JobExecutionStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,7 +36,7 @@ class JobExecutionApplicationServiceTest {
     private JobRepository jobRepository;
 
     @Mock
-    private JobExcutionIRepository executionRepository;
+    private JobExecutionRepository executionRepository;
 
     private JobExecutionApplicationService service;
 
@@ -59,11 +59,11 @@ class JobExecutionApplicationServiceTest {
                 .thenReturn(1);
         when(jobRepository.save(any(Job.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        when(executionRepository.save(any(JobExcution.class)))
+        when(executionRepository.save(any(JobExecution.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        JobExcutionRespone response = service.createJobExecution(
-                new CreateJobExcutionRequest(jobId)
+        JobExecutionResponse response = service.createJobExecution(
+                new CreateJobExecutionRequest(jobId)
         );
 
         assertEquals(jobId, response.jobId());
@@ -75,8 +75,8 @@ class JobExecutionApplicationServiceTest {
         verify(jobRepository).save(jobCaptor.capture());
         assertEquals(JobStatus.RUNNING, jobCaptor.getValue().status());
 
-        ArgumentCaptor<JobExcution> executionCaptor =
-                ArgumentCaptor.forClass(JobExcution.class);
+        ArgumentCaptor<JobExecution> executionCaptor =
+                ArgumentCaptor.forClass(JobExecution.class);
         verify(executionRepository).save(executionCaptor.capture());
         assertEquals(jobId, executionCaptor.getValue().jobId());
         assertEquals(JobExecutionStatus.RUNNING,
@@ -93,7 +93,7 @@ class JobExecutionApplicationServiceTest {
         assertThrows(
                 RuntimeException.class,
                 () -> service.createJobExecution(
-                        new CreateJobExcutionRequest(jobId)
+                        new CreateJobExecutionRequest(jobId)
                 )
         );
     }
@@ -109,7 +109,7 @@ class JobExecutionApplicationServiceTest {
         assertThrows(
                 JobValidationException.class,
                 () -> service.createJobExecution(
-                        new CreateJobExcutionRequest(jobId)
+                        new CreateJobExecutionRequest(jobId)
                 )
         );
     }
@@ -119,7 +119,7 @@ class JobExecutionApplicationServiceTest {
         UUID jobId = UUID.randomUUID();
         UUID executionId = UUID.randomUUID();
         Job runningJob = createJob(jobId, JobStatus.RUNNING);
-        JobExcution runningExecution = createExecution(
+        JobExecution runningExecution = createExecution(
                 executionId,
                 jobId,
                 JobExecutionStatus.RUNNING
@@ -129,12 +129,12 @@ class JobExecutionApplicationServiceTest {
                 .thenReturn(Optional.of(runningExecution));
         when(jobRepository.findById(jobId))
                 .thenReturn(Optional.of(runningJob));
-        when(executionRepository.save(any(JobExcution.class)))
+        when(executionRepository.save(any(JobExecution.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(jobRepository.save(any(Job.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        JobExcutionRespone response = service.finishExecution(
+        JobExecutionResponse response = service.finishExecution(
                 executionId,
                 JobExecutionStatus.SUCCEEDED
         );
@@ -153,7 +153,7 @@ class JobExecutionApplicationServiceTest {
         UUID jobId = UUID.randomUUID();
         UUID executionId = UUID.randomUUID();
         Job runningJob = createJob(jobId, JobStatus.RUNNING);
-        JobExcution runningExecution = createExecution(
+        JobExecution runningExecution = createExecution(
                 executionId,
                 jobId,
                 JobExecutionStatus.RUNNING
@@ -163,7 +163,7 @@ class JobExecutionApplicationServiceTest {
                 .thenReturn(Optional.of(runningExecution));
         when(jobRepository.findById(jobId))
                 .thenReturn(Optional.of(runningJob));
-        when(executionRepository.save(any(JobExcution.class)))
+        when(executionRepository.save(any(JobExecution.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(jobRepository.save(any(Job.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -203,7 +203,7 @@ class JobExecutionApplicationServiceTest {
         UUID jobId = UUID.randomUUID();
         UUID executionId = UUID.randomUUID();
         Job queuedJob = createJob(jobId, JobStatus.QUEUED);
-        JobExcution runningExecution = createExecution(
+        JobExecution runningExecution = createExecution(
                 executionId,
                 jobId,
                 JobExecutionStatus.RUNNING
@@ -228,7 +228,7 @@ class JobExecutionApplicationServiceTest {
         UUID jobId = UUID.randomUUID();
         UUID executionId = UUID.randomUUID();
         Job runningJob = createJob(jobId, JobStatus.RUNNING);
-        JobExcution runningExecution = createExecution(
+        JobExecution runningExecution = createExecution(
                 executionId,
                 jobId,
                 JobExecutionStatus.RUNNING
@@ -256,8 +256,8 @@ class JobExecutionApplicationServiceTest {
         verify(jobRepository).save(jobCaptor.capture());
         assertEquals(expectedJobStatus, jobCaptor.getValue().status());
 
-        ArgumentCaptor<JobExcution> executionCaptor =
-                ArgumentCaptor.forClass(JobExcution.class);
+        ArgumentCaptor<JobExecution> executionCaptor =
+                ArgumentCaptor.forClass(JobExecution.class);
         verify(executionRepository).save(executionCaptor.capture());
         assertEquals(expectedExecutionStatus,
                 executionCaptor.getValue().status());
@@ -275,12 +275,12 @@ class JobExecutionApplicationServiceTest {
         );
     }
 
-    private JobExcution createExecution(
+    private JobExecution createExecution(
             UUID executionId,
             UUID jobId,
             JobExecutionStatus status
     ) {
-        return new JobExcution(
+        return new JobExecution(
                 executionId,
                 jobId,
                 1,

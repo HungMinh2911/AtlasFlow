@@ -1,7 +1,7 @@
 package com.atlasflow.job.execution.infrastructure;
 
-import com.atlasflow.job.execution.application.port.JobExcutionIRepository;
-import com.atlasflow.job.execution.domain.JobExcution;
+import com.atlasflow.job.execution.application.port.JobExecutionRepository;
+import com.atlasflow.job.execution.domain.JobExecution;
 import org.springframework.stereotype.Repository;
 
 import java.util.Map;
@@ -10,12 +10,12 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Repository
-public class InMemoryJobExcutionRepository implements JobExcutionIRepository {
+public class InMemoryJobExecutionRepository implements JobExecutionRepository {
 
-    private final Map<UUID, JobExcution> jobExcutionMap = new ConcurrentHashMap<>();
+    private final Map<UUID, JobExecution> jobExcutionMap = new ConcurrentHashMap<>();
 
     @Override
-    public Optional<JobExcution> findById(UUID executionId) {
+    public Optional<JobExecution> findById(UUID executionId) {
         return Optional.ofNullable(jobExcutionMap.get(executionId));
     }
 
@@ -23,13 +23,13 @@ public class InMemoryJobExcutionRepository implements JobExcutionIRepository {
     public int max_attempt(UUID id){
         return jobExcutionMap.values().stream()
                 .filter(excution -> excution.jobId().equals(id))
-                .map(JobExcution::attempt)
+                .map(JobExecution::attempt)
                 .max(Integer::compareTo)
                 .orElse(0)+1;
     }
 
     @Override
-    public JobExcution save (JobExcution jobExcution){
+    public JobExecution save (JobExecution jobExcution){
         jobExcutionMap.put(jobExcution.id(),jobExcution);
 
         return jobExcution;

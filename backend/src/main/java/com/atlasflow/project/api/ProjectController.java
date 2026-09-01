@@ -2,6 +2,7 @@ package com.atlasflow.project.api;
 
 import com.atlasflow.project.application.ProjectApplicationService;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -18,6 +19,7 @@ public class ProjectController {
     }
 
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     public ProjectResponse createProject(
             @Valid @RequestBody CreateProjectRequest request
     ) {

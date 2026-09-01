@@ -5,10 +5,10 @@ import com.atlasflow.job.domain.Job;
 import com.atlasflow.job.domain.JobNotFoundException;
 import com.atlasflow.job.domain.JobStatus;
 import com.atlasflow.job.domain.JobValidationException;
-import com.atlasflow.job.execution.api.CreateJobExcutionRequest;
-import com.atlasflow.job.execution.api.JobExcutionRespone;
-import com.atlasflow.job.execution.application.port.JobExcutionIRepository;
-import com.atlasflow.job.execution.domain.JobExcution;
+import com.atlasflow.job.execution.api.CreateJobExecutionRequest;
+import com.atlasflow.job.execution.api.JobExecutionResponse;
+import com.atlasflow.job.execution.application.port.JobExecutionRepository;
+import com.atlasflow.job.execution.domain.JobExecution;
 import com.atlasflow.job.execution.domain.JobExecutionNotFoundException;
 import com.atlasflow.job.execution.domain.JobExecutionStatus;
 import org.springframework.stereotype.Service;
@@ -22,18 +22,18 @@ import java.util.UUID;
 public class JobExecutionApplicationService {
 
     private JobRepository jobRepository;
-    private JobExcutionIRepository jobExcutionIRepository;
+    private JobExecutionRepository jobExcutionIRepository;
 
     public JobExecutionApplicationService(
             JobRepository jobRepository,
-            JobExcutionIRepository jobExcutionIRepository
+            JobExecutionRepository jobExcutionIRepository
     ) {
         this.jobRepository = jobRepository;
         this.jobExcutionIRepository = jobExcutionIRepository;
     }
 
-    public JobExcutionRespone createJobExecution(
-            CreateJobExcutionRequest request
+    public JobExecutionResponse createJobExecution(
+            CreateJobExecutionRequest request
     ) {
 
         UUID jobId = request.jobId();
@@ -47,19 +47,19 @@ public class JobExecutionApplicationService {
         }
 
         int attempt = jobExcutionIRepository.max_attempt(jobId);
-        JobExcution execution = JobExcution.create(jobId, attempt);
+        JobExecution execution = JobExecution.create(jobId, attempt);
 
         jobRepository.save(job.startRun());
         jobExcutionIRepository.save(execution);
 
-        return JobExcutionRespone.from(execution);
+        return JobExecutionResponse.from(execution);
     }
 
-    public JobExcutionRespone finishExecution(
+    public JobExecutionResponse finishExecution(
             UUID executionId,
             JobExecutionStatus executionStatus
     ) {
-        JobExcution execution = jobExcutionIRepository.findById(executionId)
+        JobExecution execution = jobExcutionIRepository.findById(executionId)
                 .orElseThrow(() -> new JobExecutionNotFoundException(executionId));
 
         Job job = jobRepository.findById(execution.jobId())
@@ -74,12 +74,12 @@ public class JobExecutionApplicationService {
             );
         };
 
-        JobExcution finishedExecution = execution.finish(executionStatus);
+        JobExecution finishedExecution = execution.finish(executionStatus);
         Job finishedJob = job.finish(finalJobStatus);
 
         jobExcutionIRepository.save(finishedExecution);
         jobRepository.save(finishedJob);
 
-        return JobExcutionRespone.from(finishedExecution);
+        return JobExecutionResponse.from(finishedExecution);
     }
 }

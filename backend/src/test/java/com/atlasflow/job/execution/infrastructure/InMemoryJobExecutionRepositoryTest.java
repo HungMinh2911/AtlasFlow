@@ -1,6 +1,6 @@
 package com.atlasflow.job.execution.infrastructure;
 
-import com.atlasflow.job.execution.domain.JobExcution;
+import com.atlasflow.job.execution.domain.JobExecution;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -8,14 +8,14 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class InMemoryJobExcutionRepositoryTest {
+class InMemoryJobExecutionRepositoryTest {
 
-    private final InMemoryJobExcutionRepository repository =
-            new InMemoryJobExcutionRepository();
+    private final InMemoryJobExecutionRepository repository =
+            new InMemoryJobExecutionRepository();
 
     @Test
     void saveAndFindByIdShouldReturnExecution() {
-        JobExcution execution = JobExcution.create(UUID.randomUUID(), 1);
+        JobExecution execution = JobExecution.create(UUID.randomUUID(), 1);
 
         repository.save(execution);
 
@@ -36,8 +36,8 @@ class InMemoryJobExcutionRepositoryTest {
     void maxAttemptShouldReturnNextAttemptForSameJob() {
         UUID jobId = UUID.randomUUID();
 
-        repository.save(JobExcution.create(jobId, 1));
-        repository.save(new JobExcution(
+        repository.save(JobExecution.create(jobId, 1));
+        repository.save(new JobExecution(
                 UUID.randomUUID(),
                 jobId,
                 2,
@@ -55,9 +55,9 @@ class InMemoryJobExcutionRepositoryTest {
         UUID firstJobId = UUID.randomUUID();
         UUID secondJobId = UUID.randomUUID();
 
-        repository.save(JobExcution.create(firstJobId, 1));
-        repository.save(JobExcution.create(secondJobId, 1));
-        repository.save(new JobExcution(
+        repository.save(JobExecution.create(firstJobId, 1));
+        repository.save(JobExecution.create(secondJobId, 1));
+        repository.save(new JobExecution(
                 UUID.randomUUID(),
                 secondJobId,
                 2,
