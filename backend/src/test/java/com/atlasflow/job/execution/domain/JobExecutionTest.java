@@ -10,13 +10,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-class JobExcutionTest {
+class JobExecutionTest {
 
     @Test
     void createShouldStartExecutionAsRunning() {
         UUID jobId = UUID.randomUUID();
 
-        JobExcution execution = JobExcution.create(jobId, 1);
+        JobExecution execution = JobExecution.create(jobId, 1);
 
         assertNotNull(execution.id());
         assertEquals(jobId, execution.jobId());
@@ -29,7 +29,7 @@ class JobExcutionTest {
 
     @Test
     void finishShouldSetTerminalStatusAndFinishedTime() {
-        JobExcution execution = new JobExcution(
+        JobExecution execution = new JobExecution(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 1,
@@ -39,7 +39,7 @@ class JobExcutionTest {
                 null
         );
 
-        JobExcution finished = execution.finish(JobExecutionStatus.SUCCEEDED);
+        JobExecution finished = execution.finish(JobExecutionStatus.SUCCEEDED);
 
         assertEquals(JobExecutionStatus.SUCCEEDED, finished.status());
         assertNotNull(finished.finishedAt());
@@ -49,7 +49,7 @@ class JobExcutionTest {
 
     @Test
     void finishShouldRejectAlreadyFinishedExecution() {
-        JobExcution execution = new JobExcution(
+        JobExecution execution = new JobExecution(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 1,
@@ -67,7 +67,7 @@ class JobExcutionTest {
 
     @Test
     void finishShouldRejectRunningAsTerminalStatus() {
-        JobExcution execution = new JobExcution(
+        JobExecution execution = new JobExecution(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 1,

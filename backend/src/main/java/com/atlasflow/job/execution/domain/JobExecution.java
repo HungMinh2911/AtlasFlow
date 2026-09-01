@@ -3,7 +3,7 @@ package com.atlasflow.job.execution.domain;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-public record JobExcution(
+public record JobExecution(
         UUID id,
         UUID jobId,
         int attempt,
@@ -13,12 +13,12 @@ public record JobExcution(
         LocalDateTime finishedAt
 
 ) {
-    public static JobExcution create (
+    public static JobExecution create (
             UUID jobId,
             int attempt
     ){
         String workerId = "local_worker_1";
-        return new JobExcution(
+        return new JobExecution(
                 UUID.randomUUID(),
                 jobId,
                 attempt,
@@ -28,7 +28,7 @@ public record JobExcution(
                 null
         );
     }
-    public JobExcution finish (JobExecutionStatus status){
+    public JobExecution finish (JobExecutionStatus status){
         if (this.status != JobExecutionStatus.RUNNING) {
             throw new IllegalStateException(
                     "Only RUNNING execution can be finished"
@@ -43,7 +43,7 @@ public record JobExcution(
             );
         }
 
-        return new JobExcution(
+        return new JobExecution(
                 id,
                 jobId,
                 attempt,

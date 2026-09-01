@@ -17,23 +17,23 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/v1/job-executions")
-public class JobExcutionController {
+public class JobExecutionController {
 
     private final JobExecutionApplicationService service;
 
-    public JobExcutionController(JobExecutionApplicationService service) {
+    public JobExecutionController(JobExecutionApplicationService service) {
         this.service = service;
     }
 
     @PostMapping
-    public JobExcutionRespone createJobExecution(
-            @Valid @RequestBody CreateJobExcutionRequest request
+    public JobExecutionResponse createJobExecution(
+            @Valid @RequestBody CreateJobExecutionRequest request
     ) {
         return service.createJobExecution(request);
     }
 
     @PatchMapping("/{executionId}/finish")
-    public JobExcutionRespone finishExecution(
+    public JobExecutionResponse finishExecution(
             @PathVariable UUID executionId,
             @Valid @RequestBody FinishJobExecutionRequest request
     ) {

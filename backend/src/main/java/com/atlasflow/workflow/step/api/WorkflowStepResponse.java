@@ -1,7 +1,7 @@
 package com.atlasflow.workflow.step.api;
 
 import com.atlasflow.workflow.step.domain.WorkflowStep;
-import tools.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.UUID;
 

@@ -1,7 +1,8 @@
 spring:
   config:
     activate:
-      on-profile: local
+      on-profile: local # cấu hình chỉ áp dụng cho profile local
+                       # chạy app với tham số -Dspring.profiles.active=local
 
 logging:
   level:

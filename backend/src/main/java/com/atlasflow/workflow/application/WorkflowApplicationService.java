@@ -69,4 +69,10 @@ public class WorkflowApplicationService {
                 steps
         );
     }
+
+    public WorkflowResponse publishWorkflow(UUID workflowId) {
+        Workflow workflow = workflowRepository.findById(workflowId)
+                .orElseThrow(() -> new WorkflowNotFoundException(workflowId));
+        return WorkflowResponse.from(workflowRepository.save(workflow.publish()));
+    }
 }

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Comparator;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Repository
@@ -31,7 +32,9 @@ public class InMemoryWorkflowStepRepository implements WorkflowStepRepository {
     @Override
     public List<WorkflowStep> getListWorkflowStepByWorkflowId(UUID workflowId){
         return  workflowSteps.values().stream()
-                .filter(workflowStep -> workflowStep.workflowId().equals(workflowId)).toList();
+                .filter(workflowStep -> workflowStep.workflowId().equals(workflowId))
+                .sorted(Comparator.comparingInt(WorkflowStep::position))
+                .toList();
 
     }
 

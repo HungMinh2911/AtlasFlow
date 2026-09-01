@@ -9,7 +9,7 @@ import com.atlasflow.workflow.step.domain.InvalidWorkflowStepConfigException;
 import com.atlasflow.workflow.step.domain.WorkflowStep;
 import com.atlasflow.workflow.step.domain.WorkflowStepType;
 import org.springframework.stereotype.Service;
-import tools.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.List;
 import java.util.UUID;

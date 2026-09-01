@@ -1,12 +1,12 @@
 package com.atlasflow.job.execution.api;
 
-import com.atlasflow.job.execution.domain.JobExcution;
+import com.atlasflow.job.execution.domain.JobExecution;
 import com.atlasflow.job.execution.domain.JobExecutionStatus;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-public record JobExcutionRespone(
+public record JobExecutionResponse(
         UUID id,
         UUID jobId,
         int attempt,
@@ -16,8 +16,8 @@ public record JobExcutionRespone(
         LocalDateTime finishedAt
 ) {
 
-    public static JobExcutionRespone from (JobExcution jobExcution){
-        return  new JobExcutionRespone(
+    public static JobExecutionResponse from (JobExecution jobExcution){
+        return  new JobExecutionResponse(
                 jobExcution.id(),
                 jobExcution.jobId(),
                 jobExcution.attempt(),

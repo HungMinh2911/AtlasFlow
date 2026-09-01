@@ -24,6 +24,21 @@ public class InMemoryJobRepository implements JobRepository {
     }
 
     @Override
+    public Optional<Job> findByProjectIdAndIdempotencyKey(UUID projectId, String idempotencyKey) {
+        return findByIdempotencyKey(idempotencyKey)
+                .filter(job -> job.projectId().equals(projectId));
+    }
+
+    @Override
+    public Optional<Job> insertIfAbsent(Job job) {
+        if (job.idempotencyKey() != null && jobIdsByIdempotencyKey.putIfAbsent(job.idempotencyKey(), job.id()) != null) {
+            return Optional.empty();
+        }
+        jobs.put(job.id(), job);
+        return Optional.of(job);
+    }
+
+    @Override
     public Job save(Job job) {
         jobs.put(job.id(), job);
         jobIdsByIdempotencyKey.put(job.idempotencyKey(), job.id());

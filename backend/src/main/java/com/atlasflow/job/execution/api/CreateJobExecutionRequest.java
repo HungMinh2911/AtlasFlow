@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotNull;
 
 import java.util.UUID;
 
-public record CreateJobExcutionRequest(
+public record CreateJobExecutionRequest(
 
         @NotNull
         UUID jobId
