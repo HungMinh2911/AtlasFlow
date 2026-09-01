@@ -3,7 +3,7 @@ package com.atlasflow.workflow.step.api;
 import com.atlasflow.workflow.step.domain.WorkflowStepType;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
-import tools.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.JsonNode;
 
 public record CreateWorkflowStepRequest(
         @Min(value = 1, message = "position must be greater than 0")

@@ -1,6 +1,7 @@
 package com.atlasflow.workflow.step.application;
 
 import com.atlasflow.workflow.application.port.WorkflowRepository;
+import com.atlasflow.workflow.application.WorkflowCacheService;
 import com.atlasflow.workflow.domain.WorkflowNotFoundException;
 import com.atlasflow.workflow.step.api.CreateWorkflowStepRequest;
 import com.atlasflow.workflow.step.api.WorkflowStepResponse;
@@ -9,7 +10,7 @@ import com.atlasflow.workflow.step.domain.InvalidWorkflowStepConfigException;
 import com.atlasflow.workflow.step.domain.WorkflowStep;
 import com.atlasflow.workflow.step.domain.WorkflowStepType;
 import org.springframework.stereotype.Service;
-import tools.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.List;
 import java.util.UUID;
@@ -19,13 +20,16 @@ public class WorkflowStepApplicationService {
 
     private final WorkflowRepository workflowRepository;
     private final WorkflowStepRepository workflowStepRepository;
+    private final WorkflowCacheService workflowCacheService;
 
     public WorkflowStepApplicationService(
             WorkflowRepository workflowRepository,
-            WorkflowStepRepository workflowStepRepository
+            WorkflowStepRepository workflowStepRepository,
+            WorkflowCacheService workflowCacheService
     ) {
         this.workflowRepository = workflowRepository;
         this.workflowStepRepository = workflowStepRepository;
+        this.workflowCacheService = workflowCacheService;
     }
 
     public WorkflowStepResponse createWorkflowStep(
@@ -54,9 +58,11 @@ public class WorkflowStepApplicationService {
                 request.config_json()
         );
 
-        return WorkflowStepResponse.from(
+        WorkflowStepResponse response = WorkflowStepResponse.from(
                 workflowStepRepository.save(step)
         );
+        workflowCacheService.evictWorkflowFromCache(workflowId);
+        return response;
     }
 
     private void validateConfig(

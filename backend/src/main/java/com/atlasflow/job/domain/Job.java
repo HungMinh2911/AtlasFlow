@@ -10,14 +10,21 @@ public record Job(
         UUID fileId,
         JobStatus status,
         String idempotencyKey,
+        String requestFingerprint,
         LocalDateTime createdAt
 ) {
+    public Job(UUID id, UUID projectId, UUID workflowId, UUID fileId,
+               JobStatus status, String idempotencyKey, LocalDateTime createdAt) {
+        this(id, projectId, workflowId, fileId, status, idempotencyKey, null, createdAt);
+    }
+
     public static Job submit(
             UUID id,
             UUID projectId,
             UUID workflowId,
             UUID fileId,
-            String idempotencyKey
+            String idempotencyKey,
+            String requestFingerprint
     ) {
         return new Job(
                 id,
@@ -26,6 +33,7 @@ public record Job(
                 fileId,
                 JobStatus.SUBMITTED,
                 idempotencyKey,
+                requestFingerprint,
                 LocalDateTime.now()
         );
     }
@@ -43,6 +51,7 @@ public record Job(
                 fileId,
                 JobStatus.QUEUED,
                 idempotencyKey,
+                requestFingerprint,
                 createdAt
         );
     }
@@ -60,6 +69,7 @@ public record Job(
                 fileId,
                 JobStatus.RUNNING,
                 idempotencyKey,
+                requestFingerprint,
                 createdAt
         );
     }
@@ -86,6 +96,7 @@ public record Job(
                 fileId,
                 finalStatus,
                 idempotencyKey,
+                requestFingerprint,
                 createdAt
         );
     }

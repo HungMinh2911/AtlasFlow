@@ -1,7 +1,10 @@
 package com.atlasflow.workflow.api;
 
+import com.atlasflow.security.tenant.RequireWorkflowAccess;
 import com.atlasflow.workflow.application.WorkflowApplicationService;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,6 +27,7 @@ public class WorkflowController {
     }
 
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     public WorkflowResponse createWorkflow(
             @Valid @RequestBody CreateWorkflowRequest request
     ) {
@@ -31,9 +35,15 @@ public class WorkflowController {
     }
 
     @GetMapping("/{workflowId}")
+    @RequireWorkflowAccess(pathVariable = "workflowId")
     public WorkflowDetailResponse getWorkflow(
-            @PathVariable UUID workflowId
+            @PathVariable("workflowId") UUID workflowId
     ) {
         return workflowApplicationService.getWorkflow(workflowId);
+    }
+
+    @PostMapping("/{workflowId}/publish")
+    public WorkflowResponse publishWorkflow(@PathVariable("workflowId") UUID workflowId) {
+        return workflowApplicationService.publishWorkflow(workflowId);
     }
 }

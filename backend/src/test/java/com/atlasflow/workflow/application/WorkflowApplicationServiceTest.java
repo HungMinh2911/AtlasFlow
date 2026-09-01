@@ -30,12 +30,16 @@ class WorkflowApplicationServiceTest {
     @Mock
     private WorkflowStepApplicationService workflowStepService;
 
+    @Mock
+    private WorkflowCacheService workflowCacheService;
+
     @Test
     void createWorkflowShouldUseNextVersionForProject() {
         WorkflowApplicationService service = new WorkflowApplicationService(
                 projectRepository,
                 workflowRepository,
-                workflowStepService
+                workflowStepService,
+                workflowCacheService
         );
         UUID projectId = UUID.randomUUID();
 

@@ -1,5 +1,6 @@
 package com.atlasflow.workflow.api;
 
+import com.atlasflow.workflow.domain.Workflow;
 import com.atlasflow.workflow.step.api.WorkflowStepResponse;
 
 import java.util.List;
@@ -11,4 +12,14 @@ public record WorkflowDetailResponse(
         int version,
         String status,
         List<WorkflowStepResponse> steps
-) {}
+) {
+    public static WorkflowDetailResponse from(Workflow workflow, List<WorkflowStepResponse> steps) {
+        return new WorkflowDetailResponse(
+                workflow.id(),
+                workflow.project_id(),
+                workflow.version(),
+                workflow.status().name(),
+                steps
+        );
+    }
+}

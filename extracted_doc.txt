@@ -1,0 +1,3129 @@
+﻿ATLASFLOW
+Distributed Cloud Job & Workflow Platform
+Technical Mentor Handbook - Real-world Case Study Edition
+Vai trò học tập
+Mục tiêu cuối
+Thời lượng
+Software ArchitectCloud ArchitectDevOps/SRENetworkCybersecurity
+Hiểu hệ thống production từ user đến storage và observability; biết đọc incident thật và chuyển thành lab
+130 ngàyLocal-firstAWS cost-controlled
+
+Điểm nâng cấp của bản v2
+Mỗi nhóm kiến thức quan trọng được nối với một sự cố thật đã được công bố bởi chính tổ chức hoặc cơ quan chính thức: chuyện gì xảy ra, người dùng thấy gì, lỗi nằm ở boundary nào, team đã khôi phục ra sao và bạn sẽ mô phỏng lại thế nào trong AtlasFlow.
+
+Tuyên bố thiết kế
+Đây là một dự án duy nhất được phát triển qua nhiều lớp trưởng thành. Bắt đầu bằng modular monolith, sau đó dùng dữ liệu workload, reliability, ownership và security boundary để quyết định component nào đáng tách. Không nhồi công nghệ chỉ để tạo cảm giác production.
+
+Mục lục
+1. Bối cảnh, mục tiêu và nguyên tắc mentor
+2. Ba ý tưởng và quyết định chọn AtlasFlow
+3. Product contract và workload thực tế
+4. Kiến trúc tổng thể và các luồng hệ thống
+4.8 Casebook: 10 sự cố thật và bài lab AtlasFlow
+5. Technology stack và trade-off
+6. Database, API, network và security model
+7. DevOps, Terraform, Kubernetes và CI/CD
+8. Observability, SRE và failure engineering
+9. Roadmap 15 phase trong 130 ngày
+10. AWS cost strategy cho 100 USD / 130 ngày
+11. Phase playbooks 0-14
+12. Documentation, portfolio và interview preparation
+13. Learning map và weekly operating rhythm
+Phụ lục: glossary, checklist, runbook và nguồn đọc chính thức
+1. Bối cảnh, mục tiêu và nguyên tắc mentor
+1.0 Thuật ngữ nền tảng cần hiểu trước khi học
+Các từ dưới đây sẽ xuất hiện xuyên suốt handbook. Hãy hiểu bản chất trước khi nhớ tên công nghệ: một thuật ngữ mô tả một vấn đề hoặc một cơ chế trong hệ thống, còn công nghệ chỉ là một cách triển khai cơ chế đó.
+Thuật ngữ
+Nghĩa tiếng Việt
+Bản chất cần hiểu
+Architecture
+Kiến trúc hệ thống
+Cách các thành phần, boundary và luồng dữ liệu được tổ chức để đáp ứng workload, reliability, security và cost.
+Component
+Thành phần
+Một phần có trách nhiệm rõ, ví dụ API, worker, database hoặc queue; component không chỉ là một file code.
+Domain
+Miền nghiệp vụ
+Các khái niệm và quy tắc của bài toán; AtlasFlow xoay quanh organization, project, workflow, job, execution và file.
+Request / response
+Yêu cầu / phản hồi
+Request là dữ liệu đi vào hệ thống; response là kết quả trả ra. Cần theo được request qua từng boundary.
+Data flow
+Luồng dữ liệu
+Dữ liệu được tạo, biến đổi, lưu và truyền qua component nào; khác với control flow là quyết định điều khiển.
+API (Application Programming Interface)
+Giao diện lập trình ứng dụng
+Hợp đồng để client gọi service: endpoint, method, input, output, lỗi, auth và giới hạn; API không chỉ là URL.
+Database
+Cơ sở dữ liệu
+Nơi lưu trạng thái cần bền vững và truy vấn được; PostgreSQL là source of truth, không phải mọi dữ liệu đều nên nằm ở cache.
+Transaction
+Giao dịch
+Nhóm thao tác được commit hoặc rollback như một đơn vị; giúp tránh trạng thái dở dang nhưng giữ transaction quá lâu sẽ làm tăng lock.
+Queue / broker
+Hàng đợi / bộ môi giới message
+Nơi tách producer và consumer; giúp xử lý bất đồng bộ và hấp thụ tải, nhưng tạo độ trễ và bài toán giao trùng.
+Worker
+Tiến trình xử lý nền
+Consumer lấy job từ queue, thực hiện task, cập nhật state và xác nhận message; worker chết phải có cơ chế retry/recovery.
+Idempotency 
+Tính lặp an toàn
+Cùng một operation chạy lại không tạo side effect(tác dụng phụ) sai hoặc duplicate; đây là cách xử lý thực tế khi message có thể giao nhiều lần.
+Retry / backoff
+Thử lại / giãn thời gian thử lại
+Retry lỗi tạm thời với số lần và khoảng cách có giới hạn; retry vô hạn sẽ tạo retry storm và làm dependency tệ hơn.
+DLQ (Dead Letter Queue)
+Hàng đợi thư chết
+Nơi giữ message không xử lý được sau policy retry để điều tra và xử lý lại có kiểm soát.
+Outbox
+Bảng/nhật ký sự kiện chờ phát
+Ghi thay đổi nghiệp vụ và event trong cùng transaction; publisher đọc outbox rồi gửi message, giảm lỗi database đã commit nhưng message mất.
+Cache
+Bộ nhớ đệm
+Bản sao dữ liệu nhanh hơn source of truth; cache có thể stale, mất hoặc bị stampede nên không được dùng làm dữ liệu duy nhất nếu chưa thiết kế durability.
+Object storage
+Lưu trữ đối tượng
+Lưu file theo object key và metadata, phù hợp file lớn; S3/MinIO khác database ở cách truy cập và consistency model.
+Authentication / Authorization
+Xác thực / phân quyền
+Authentication trả lời bạn là ai; authorization trả lời bạn được phép làm gì với resource nào.
+Tenant isolation
+Cô lập dữ liệu giữa khách hàng
+Mọi query và object key phải gắn organization/project scope để tenant A không đọc hoặc sửa dữ liệu tenant B.
+DNS
+Hệ thống phân giải tên miền
+Đổi tên dễ nhớ thành địa chỉ IP/đích dịch vụ; DNS hỏng có thể làm request không bắt đầu dù server vẫn sống.
+TCP / TLS / HTTP
+Kết nối tin cậy / mã hóa / giao thức web
+TCP tạo kết nối và truyền byte; TLS xác thực và mã hóa; HTTP mô tả request/response ở tầng ứng dụng.
+Load balancer
+Bộ cân bằng tải
+Nhận traffic và chọn target khỏe; tăng availability nhưng thêm hop, health check và một boundary cần quan sát.
+Container
+Tiến trình được đóng gói có cô lập
+Đóng gói code, runtime và dependency để chạy nhất quán; container không phải máy ảo và không tự giải quyết state.
+Orchestration
+Điều phối nhiều container
+Scheduler quyết định chạy ở đâu, probe xem có nhận traffic không, rollout thay version; Kubernetes là một hệ điều phối.
+CI/CD
+Tích hợp liên tục / phân phối, triển khai liên tục
+Tự động test, scan, build, deploy và rollback; mục tiêu là giảm rủi ro thay đổi chứ không chỉ tự động hóa lệnh.
+Observability
+Khả năng quan sát
+Dùng metrics, logs và traces để suy ra trạng thái bên trong từ tín hiệu bên ngoài; monitoring chỉ là một phần của observability.
+SLO / SLA / SLI
+Mục tiêu / cam kết / chỉ số tin cậy
+SLI là cách đo, SLO là mục tiêu nội bộ, SLA là cam kết với khách hàng; không dùng con số nếu chưa có cách đo.
+RTO / RPO
+Thời gian / lượng dữ liệu có thể mất khi khôi phục
+RTO đo mất bao lâu để phục hồi; RPO đo quay lại điểm dữ liệu nào. Cả hai phải được kiểm chứng bằng restore drill.
+Failure mode
+Kiểu hỏng
+Một cách hệ thống có thể lỗi: timeout, crash, duplicate, stale data, permission deny, network partition hoặc resource exhaustion.
+Trade-off
+Sự đánh đổi
+Mọi lựa chọn đổi một thuộc tính lấy thuộc tính khác, ví dụ consistency lấy latency, managed service lấy cost, automation lấy complexity.
+Local First
+Làm local trước
+Implement, run, test, failure test, debug và optimize trên máy local; AWS chỉ là bước kiểm chứng deployment sau khi đã hiểu cơ chế.
+Canary / rollback
+Triển khai thăm dò / quay lại bản ổn định
+Canary giới hạn blast radius cho một phần traffic; rollback đưa artifact đã biết tốt trở lại khi evidence cho thấy release có vấn đề.
+Bạn đang học Java Backend, Docker, Linux, SQL, Cloud, DevOps, Network và Security. Mục tiêu của AtlasFlow không phải là gom chứng chỉ hay tạo một repository có nhiều công nghệ, mà là luyện khả năng nhìn một hệ thống từ đầu đến cuối.
+Sau dự án, bạn phải có thể trả lời: request đang ở đâu, packet đang ở đâu, data đang ở đâu, bottleneck nằm ở đâu, security boundary là gì, component nào nên scale, lỗi xảy ra thế nào, recovery ra sao, cost là bao nhiêu và metric nào chứng minh điều đó.
+Non-goals
+Không làm AI/ML/RAG; không chạy code tùy ý của người dùng; không bắt đầu bằng microservices; không dùng Kafka và RabbitMQ cùng lúc; không để AWS resource chạy 24/7 nếu lab không cần; không viết README nói quá những gì đã implement.
+
+1.1 Quy tắc học
+Mỗi công nghệ phải trả lời: nó giải quyết vấn đề gì, nếu bỏ nó thì sao, nó giao tiếp với ai, failure mode là gì, security risk là gì và đo bằng metric nào.
+Mỗi feature đi qua chuỗi Concept -> Why -> How it works -> Architecture -> Implementation -> Test -> Failure -> Monitoring -> Security -> Optimization.
+Mỗi lỗi được debug theo Symptom -> Evidence -> Hypothesis -> Test -> Root Cause -> Fix -> Prevention.
+Mỗi phase có artifact nhìn thấy được: code, diagram, test result, dashboard, runbook, postmortem hoặc ADR.
+Khi học quá nhiều thứ cùng lúc, giữ lại thứ cần cho phase hiện tại; phần còn lại đưa vào backlog, không mở thêm scope tùy hứng.
+1.2 Cách mentor sẽ làm việc cùng bạn
+Khi bạn hỏi
+Cách trả lời
+Tại sao?
+Giải thích trade-off, giả định, boundary và hậu quả nếu thiết kế khác.
+Hoạt động thế nào?
+Đi từ packet/process/thread/transaction lên component và user-visible behavior.
+Bị lỗi
+Thu thập evidence trước khi đưa command sửa; phân biệt symptom với root cause.
+Muốn dùng công nghệ mới
+Đặt nó vào architecture, xác định problem statement và thử nghiệm nhỏ trước.
+Muốn tách microservice
+Đòi hỏi lý do về scale, deployment, ownership, workload, reliability hoặc security.
+2. Ba ý tưởng và quyết định chọn AtlasFlow
+Ý tưởng
+Workload
+Kiến thức hệ thống
+Rủi ro phạm vi
+AtlasFlowDistributed Cloud Job & Workflow Platform
+Submit job, chạy workflow, upload file, retry, cancel, notification
+Queue, worker, S3, transaction, multi-tenant, audit, SRE
+Trung bình - kiểm soát được bằng modular monolith
+HookForgeWebhook Delivery Platform
+Nhận event và delivery đến endpoint, retry, backoff, DLQ
+HTTP, retry, rate limit, idempotency, queue, network failure
+Thấp hơn nhưng ít domain/file storage
+OpsGridIncident & Change Platform
+Incident, change, approval, audit, SLO
+RBAC, audit, observability, deployment governance
+Dễ trượt thành CRUD quản trị
+2.1 Vì sao AtlasFlow thắng
+Có workload thật: file lớn, background job, queue backlog, worker throughput, retry và kết quả bất đồng bộ.
+Buộc học consistency: PostgreSQL là source of truth, Outbox giải quyết database-to-message boundary, idempotency bảo vệ khi delivery at-least-once.
+Có nhiều failure mode có thể tái tạo mà không cần traffic production: backend crash, broker down, worker chết, slow query, cache stampede.
+Có đường tiến hóa hợp lý: modular monolith -> worker process -> các service ứng viên khi có evidence.
+Phù hợp portfolio vì có thể demo bằng một workflow có input, execution history, retry, audit, dashboard và incident report.
+2.2 Quyết định kiến trúc nền
+ADR
+Quyết định
+Lý do
+Điều kiện xem xét lại
+ADR-001
+Modular monolith first
+Giữ transaction và debug đơn giản trong giai đoạn học domain
+Module có scale/deployment/security boundary độc lập
+ADR-002
+RabbitMQ first
+Work queue, ack/nack, retry, DLQ trực quan
+Cần replay event, nhiều consumer, throughput streaming
+ADR-003
+PostgreSQL là source of truth
+Job state cần transaction và query quan hệ
+Có read model hoặc event store chứng minh nhu cầu
+ADR-004
+Redis là cache và control plane phụ
+Tăng tốc, rate limit, lock có TTL; không giữ dữ liệu duy nhất
+Chỉ khi có mô hình durability rõ ràng
+ADR-005
+S3 private by default
+Kết quả file không public; client nhận presigned URL
+Asset public được duyệt riêng với policy cụ thể
+3. Product contract và workload thực tế
+AtlasFlow là nền tảng cho một organization tạo project, định nghĩa workflow và submit job xử lý file hoặc dữ liệu theo các step được phép. Người dùng không upload code để server chạy tự do; hệ thống chỉ thực thi task type đã đăng ký.
+3.1 Actors và use cases
+Actor
+Quyền
+Luồng chính
+Organization owner
+Quản lý organization, member, project, API key
+Tạo project, mời member, xem usage và audit
+Project operator
+Tạo workflow, submit/cancel/retry job
+Theo dõi execution và xử lý failure
+Read-only auditor
+Xem job, audit log, metrics đã cấp quyền
+Điều tra sự kiện mà không sửa dữ liệu
+Worker runtime
+Nhận task được broker giao
+Process, heartbeat, ack/nack, cập nhật execution
+Platform operator
+Vận hành hệ thống
+Deploy, rollback, xem dashboard, chạy incident runbook
+3.2 Job state machine
+DRAFT -> QUEUED -> RUNNING -> SUCCEEDED                    |         |                    |         +--> CANCEL_REQUESTED -> CANCELLED                    +--> RETRY_WAITING -> QUEUED                    +--> FAILED -> RETRY_WAITING hoặc DEAD_LETTEREDInvariant: một execution chỉ có một terminal outcome; retry tạo attempt mới.
+
+Giải thích sơ đồ
+Mũi tên không chỉ mô tả thứ tự hiển thị; nó là hợp đồng nghiệp vụ. Mỗi transition phải có điều kiện vào, actor chịu trách nhiệm, side effect, event/audit và cách xử lý khi process chết giữa chừng.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+DRAFT
+Job mới được tạo nhưng chưa sẵn sàng cho worker; API còn có thể validate hoặc sửa metadata.
+Tách khỏi QUEUED để không gửi dữ liệu chưa hợp lệ vào queue; đổi lại state machine dài hơn.
+DRAFT -> QUEUED
+Sau validation và transaction commit, job được phép chờ worker.
+Mũi tên là một state transition có điều kiện; phải audit và test duplicate submit.
+QUEUED -> RUNNING
+Worker nhận message, claim execution và cập nhật heartbeat trước khi xử lý.
+Cho biết queue đã giao việc; cần timeout/lease để job không treo mãi khi worker chết.
+RUNNING -> SUCCEEDED
+Tất cả step hoàn thành, side effect đã commit và result metadata được ghi.
+Terminal state không quay ngược; dễ báo cáo nhưng cần xử lý job partial trước khi commit.
+RUNNING -> CANCEL_REQUESTED -> CANCELLED
+API ghi ý định hủy; worker kiểm tra tại checkpoint rồi dừng an toàn.
+Hủy best-effort vì không phải task nào cũng dừng ngay; đổi lại bảo toàn consistency.
+FAILED -> RETRY_WAITING -> QUEUED
+Lỗi tạm thời tạo attempt mới sau backoff; lỗi không retry được đi hướng khác.
+Tăng resilience nhưng có nguy cơ retry storm và duplicate nếu thiếu idempotency.
+FAILED -> DEAD_LETTERED
+Sau max attempts hoặc lỗi poison message, execution được tách để điều tra.
+Không mất message và không chặn queue chính; cần dashboard, owner và quy trình replay.
+Invariant
+Một execution chỉ có một terminal outcome; retry tạo attempt mới thay vì sửa lịch sử cũ.
+Giúp audit và debug đáng tin; phải dùng transaction/unique constraint để bảo vệ.
+3.3 Workload demo
+Upload CSV  |  +--> Validate format  |  +--> Check duplicate records  |  +--> Transform data  |  +--> Generate report  |  +--> Store result in S3  |  +--> Notify user
+
+Giải thích sơ đồ
+Đây là workload bất đồng bộ: người dùng nhận job_id và theo dõi trạng thái, còn worker xử lý phía sau. Đánh đổi là UI phải polling/event và người dùng không nhận kết quả ngay trong cùng HTTP request.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Upload CSV
+Client gửi file qua upload flow; API tạo metadata, kiểm tra size/type và nhận object reference.
+File lớn không nên đi xuyên qua API; direct upload giảm tải API nhưng cần presigned policy.
+Validate format
+Worker kiểm tra header, encoding, schema và kích thước trước khi xử lý.
+Fail sớm giúp tiết kiệm tài nguyên; cần trả lỗi rõ thay vì để worker crash.
+Check duplicate records
+Đọc record key và đối chiếu trong phạm vi project hoặc batch.
+Bảo vệ chất lượng dữ liệu; cần index và policy rõ khi duplicate rất lớn.
+Transform data
+Thực hiện mapping/chuẩn hóa theo task type đã đăng ký, không chạy code tùy ý người dùng.
+Allowlist task an toàn hơn plugin tự do nhưng ít linh hoạt hơn.
+Generate report
+Tạo output file/summary và gắn với job execution, attempt, checksum.
+Tăng khả năng kiểm tra kết quả; cần kiểm soát memory khi file lớn.
+Store result in S3
+Upload object private, ghi object key/size/checksum vào PostgreSQL.
+S3 bền và rẻ cho file; cần IAM, lifecycle, retry và kiểm tra metadata-object khớp nhau.
+Notify user
+Ghi trạng thái hoàn tất và phát notification/email/webhook nếu có.
+Notification nên đi sau state commit; retry notification không được chạy lại side effect xử lý file.
+3.4 Product invariants
+Member chỉ truy cập project thuộc organization mà họ có membership hợp lệ.
+Job state không được nhảy ngược từ SUCCEEDED về RUNNING.
+Một message có thể được giao lại; worker phải idempotent theo execution_id + attempt.
+Object S3 private; metadata trong PostgreSQL phải khớp object key và checksum đã ghi nhận.
+Audit log không được sửa bởi project operator và phải chứa actor, action, resource, timestamp, request_id.
+Cancellation là best-effort: API ghi ý định hủy, worker kiểm tra checkpoint trước khi commit side effect.
+4. Kiến trúc tổng thể và các luồng hệ thống
+4.1 Overall architecture
+                         Internet                            |                         Route 53                            |                      TLS / HTTPS                            |                       AWS ALB                            |                    Reverse Proxy Nginx                            |              +-------------+-------------+              |                           |        Spring Boot API              Spring Boot Worker        Modular Monolith             Same codebase              |                           |              +-------------+-------------+                            |        +-------------------+-------------------+        |                   |                   |   PostgreSQL             Redis             RabbitMQ  Source of Truth       Cache/Limit          Job Queue        |                                       |        +--------------------+------------------+                             |                            S3                      Object StorageOpenTelemetry -> Collector -> Prometheus/GrafanaJSON Logs -> CloudWatch/Loki
+
+Giải thích sơ đồ
+Đọc từ trên xuống là request path; đọc ngang sang API/worker và PostgreSQL/Redis/RabbitMQ/S3 là data/control path. Hai path này không giống nhau: API có thể trả 202 trước khi worker hoàn thành, vì vậy trạng thái trong database và evidence trong queue/worker phải nối được bằng job_id, execution_id và trace_id.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Internet -> Route 53
+Client tìm tên miền qua DNS; Route 53 trả record trỏ về entry point.
+Tên miền ổn định hơn IP; thêm dependency DNS và phải có TTL/health strategy.
+TLS / HTTPS -> ALB
+TLS mã hóa và xác thực endpoint; ALB nhận traffic, terminate TLS và chọn target khỏe.
+Bảo mật và phân phối traffic tốt hơn; thêm certificate, health check, hop và cost.
+ALB -> Nginx
+ALB chuyển HTTP nội bộ tới reverse proxy; Nginx route/limit/header rồi chuyển vào API.
+Tách edge concern khỏi application; thêm một hop và cần tránh duplicate timeout/logging.
+API
+Spring Boot modular monolith nhận request, auth, validation, transaction và trả job_id/status.
+Giữ domain transaction/debug đơn giản; scale toàn app thay vì từng module.
+Worker
+Cùng codebase nhưng chạy command/process riêng, lấy job từ RabbitMQ và thực hiện task.
+API không bị khóa bởi job dài; đổi lại cần retry, idempotency, heartbeat và worker scaling.
+PostgreSQL -> API/worker
+Lưu source of truth: user, project, workflow, job, execution, file metadata, audit/outbox.
+Transaction và query mạnh; phải quản lý connection pool, lock, backup và schema migration.
+Redis -> API/worker
+Cache read, counter rate limit hoặc lock TTL; khi miss/không có Redis thì fallback theo policy.
+Nhanh nhưng có thể stale/mất; không giữ dữ liệu duy nhất nếu không có durability design.
+RabbitMQ -> Worker
+Tách submit khỏi execution, giữ queue backlog, ACK/NACK, retry và DLQ.
+Hấp thụ tải và retry được; delivery thường at-least-once nên cần duplicate protection.
+S3 <- API/worker
+Lưu input/result object; API giữ metadata, client dùng presigned URL khi upload/download.
+Rẻ và bền cho file lớn; cần IAM, private policy, checksum, lifecycle và cost control.
+OpenTelemetry -> Collector -> Prometheus/Grafana
+Trace/log/metric được instrument, collector nhận và chuẩn hóa, backend hiển thị dashboard/alert.
+Có evidence để debug; telemetry cũng tốn CPU/storage và phải kiểm soát label/cardinality.
+JSON Logs -> CloudWatch/Loki
+Log có field timestamp, request_id, trace_id, actor, error class để search theo incident.
+Dễ truy vấn hơn text tự do; cần redact secret/PII và retention có giới hạn.
+4.2 Network architecture
+VPC 10.20.0.0/16|+-- Public Subnet 10.20.1.0/24|     +-- ALB|     +-- Temporary EC2 lab|+-- Private App Subnet 10.20.11.0/24|     +-- API|     +-- Worker|+-- Private Data Subnet 10.20.21.0/24      +-- RDS PostgreSQL      +-- Redis if managedSecurity groups: ALB -> API only; API/worker -> data ports only;no database public access.
+
+Giải thích sơ đồ
+Sơ đồ này mô tả network boundary, không thay thế application authorization. Một request hợp lệ qua ALB vẫn phải qua Authentication, Authorization và tenant isolation trong API.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+VPC 10.20.0.0/16
+Không gian địa chỉ mạng riêng cho lab AWS; subnet chia nhỏ theo vai trò.
+Tạo boundary và route control; phải tránh CIDR overlap và theo dõi IP capacity.
+Public subnet -> ALB/temporary EC2
+Có route ra Internet qua Internet Gateway; chỉ đặt entry point hoặc host lab tạm thời.
+Dễ truy cập/debug hơn; public exposure lớn hơn nên SG, patch và shutdown bắt buộc.
+Private App subnet -> API/worker
+Không nhận traffic trực tiếp từ Internet; chỉ nhận từ ALB hoặc kết nối nội bộ cần thiết.
+Giảm attack surface; outbound package/registry cần NAT hoặc endpoint, có thể tăng cost.
+Private Data subnet -> RDS/Redis
+Database/cache không có public IP; chỉ app/worker với SG đúng mới kết nối được.
+Bảo mật tốt hơn; debug khó hơn và phải chuẩn bị bastion/SSM/observability thay vì mở port.
+ALB -> API only
+Security group giới hạn cổng và source; request từ ngoài không đi thẳng tới API node.
+Boundary rõ; cần health check đúng endpoint và không coi SG là authorization nghiệp vụ.
+API/worker -> data ports only
+App chỉ mở PostgreSQL/Redis/broker port cần thiết, không mở all-to-all.
+Least privilege giảm blast radius; cần catalog dependency và test deny.
+4.3 Request flow
+Client -> DNS -> TCP -> TLS -> HTTP -> ALB -> Nginx      -> Spring Security -> AuthN -> AuthZ -> Validation      -> Business logic -> Redis/PostgreSQL -> Audit -> Response
+
+Giải thích sơ đồ
+Khi debug request, đi theo đúng thứ tự từ DNS đến response. Không bắt đầu bằng việc restart API nếu chưa biết request có tới API hay đang dừng ở DNS, TCP, TLS, proxy, auth hoặc database.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+DNS -> TCP -> TLS -> HTTP
+DNS tìm đích; TCP mở kết nối; TLS handshake/certificate/encryption; HTTP mang method, header, body.
+Mỗi tầng có lỗi khác nhau: resolve timeout, connect timeout, TLS error, 4xx/5xx; debug phải phân biệt tầng.
+ALB -> Nginx
+Traffic đi qua các proxy/health boundary trước khi tới process API.
+Cho phép routing, TLS/headers/rate limit; thêm latency và cần correlation id xuyên proxy.
+Spring Security -> AuthN
+Kiểm tra token/credential để biết principal là ai.
+Chặn request không có identity; không đồng nghĩa đã được phép truy cập resource.
+AuthZ -> Validation
+Kiểm tra quyền trên organization/project rồi kiểm tra input/schema/business rule.
+Đặt authz trước business logic giảm data leak; validation rõ giúp lỗi 4xx thay vì exception 5xx.
+Business -> Redis/PostgreSQL
+Business rule đọc cache nếu hợp lệ, dùng PostgreSQL khi cần source of truth và transaction.
+Cache giảm latency nhưng consistency phức tạp; DB bền nhưng chậm hơn và giới hạn pool/lock.
+Audit -> Response
+Ghi actor/action/resource/request_id trước khi trả response theo policy; response phản ánh kết quả đã commit.
+Tăng traceability; audit sync có thể tăng latency, audit async cần đảm bảo không mất evidence quan trọng.
+4.4 Authentication flow
+Login credentials -> password hash verify -> short-lived access token                         -> refresh token rotationAPI request -> Bearer token -> signature/expiry -> user/org context             -> project RBAC -> controller
+
+Giải thích sơ đồ
+Authentication xác định danh tính; Authorization quyết định quyền. Tách hai khái niệm này giúp bạn không nhầm ‘đã login’ với ‘được xem file/job của project này’.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Credentials -> password hash verify
+Server không lưu password plaintext; so sánh hash với cost factor phù hợp.
+Hash chậm làm brute force khó hơn; đổi lại login tốn CPU và cần rate limit.
+Short-lived access token
+Client gửi bearer token trong request; API kiểm tra signature/expiry/issuer/audience.
+Giảm thời gian token bị lạm dụng; phải có refresh flow và xử lý clock skew.
+Refresh token rotation
+Token dài hạn được đổi và token cũ bị vô hiệu hóa theo family/record.
+Giảm replay; tăng state và cần phát hiện reuse, revoke và secure storage.
+user/org context -> project RBAC
+Identity được map tới membership/role rồi kiểm tra action trên project cụ thể.
+Cô lập tenant và quyền; query thiếu scope là lỗi nghiêm trọng dù token hợp lệ.
+4.5 Job flow
+POST /jobs -> validate -> transaction(jobs, executions, outbox)         -> commit -> outbox publisher -> RabbitMQ         -> worker consume -> idempotency check -> process         -> checkpoint -> status update -> ack         -> retry/DLQ on failure
+
+Giải thích sơ đồ
+Điểm quan trọng nhất của job flow là thứ tự commit và ACK. Nếu ACK trước khi side effect bền vững, crash có thể làm mất job; nếu commit/ACK không idempotent, retry có thể tạo duplicate output.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+POST /jobs -> validate
+API kiểm tra workflow, input file, quyền và idempotency key trước khi tạo job.
+Fail fast và trả lỗi rõ; validation không thay thế constraint trong DB.
+Transaction(jobs, executions, outbox)
+Ghi trạng thái job, attempt ban đầu và event chờ publish trong một transaction.
+Tránh job đã commit nhưng message mất; outbox tạo thêm publisher/replay/cleanup work.
+Commit -> publisher -> RabbitMQ
+Sau commit, publisher đọc outbox và publish event; broker giữ message cho worker.
+API trả nhanh và chịu backlog; delivery có thể duplicate nên không hứa exactly-once.
+Worker -> idempotency -> process
+Worker nhận message, kiểm tra execution/side-effect marker rồi mới chạy task.
+Ngăn chạy lại kết quả; cần thiết kế key, uniqueness và transaction boundary cụ thể.
+Checkpoint -> status -> ACK
+Worker cập nhật progress/heartbeat và trạng thái trước khi ACK message.
+ACK sau side effect giúp tránh mất việc; crash giữa các bước cần recovery/reconciliation.
+Retry/DLQ on failure
+Lỗi transient retry với backoff; poison/permanent error đi DLQ.
+Tăng khả năng phục hồi; cần max attempts, alert, replay tool và không retry validation error.
+4.6 File upload flow
+API creates file metadata -> presigned PUT URL -> client uploads S3-> client completes upload -> API HEAD object/checksum/size-> file READY -> workflow may reference file
+
+Giải thích sơ đồ
+File flow tách control plane (metadata, permission, state) khỏi data plane (bytes của file). Đây là lý do AtlasFlow không đẩy toàn bộ file qua API mặc định.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+API creates metadata
+Ghi file_id, project scope, expected size/type/status=PENDING vào PostgreSQL.
+Có identity trước upload; cần cleanup record nếu client bỏ dở.
+Presigned PUT URL -> S3
+API ký URL có expiry/key/size policy; client upload trực tiếp tới object storage.
+Giảm API bandwidth; URL là capability nên phải ngắn hạn, private và scope đúng object.
+Complete -> HEAD/checksum/size
+Client báo hoàn tất; API kiểm tra object thật tồn tại và metadata khớp dự kiến.
+Không tin client mù quáng; HEAD/checksum thêm request nhưng bảo vệ integrity.
+READY -> workflow input
+Chỉ file READY mới được job reference; worker không đọc object chưa xác nhận.
+Tách upload state và processing state; cần lifecycle dọn PENDING lâu ngày.
+4.7 CI/CD and observability flows
+GitHub -> Actions -> test -> scan -> build image -> ECR        -> deploy staging -> health/smoke -> approval -> production        -> rollout metrics -> rollback if error budget burnsRequest -> correlation_id -> trace_id -> API span -> DB/Redis/MQ/S3 spansMetrics -> Prometheus -> Grafana; logs -> JSON -> CloudWatch/Loki
+
+Giải thích sơ đồ
+CI/CD trả lời ‘thay đổi này có an toàn để đưa vào runtime không?’. Observability trả lời ‘runtime đang làm gì và vì sao?’. Hai luồng phải liên kết bằng commit SHA, deployment ID, trace ID và runbook.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+GitHub -> Actions -> test/scan
+Mỗi change đi qua build, unit/integration test, dependency/image scan trước khi tạo artifact.
+Phát hiện lỗi sớm; pipeline chậm hơn và cần cache/quy tắc bypass khẩn cấp có audit.
+Build image -> ECR
+Tạo image immutable theo commit SHA/digest rồi lưu registry.
+Artifact tái lập và rollback được; cần scan, retention, credential và cost storage.
+Staging -> health/smoke -> approval
+Deploy vào môi trường gần production, kiểm tra process/endpoint/user journey trước promotion.
+Giảm rủi ro; staging khác production nên không chứng minh mọi thứ.
+Production -> metrics -> rollback
+Theo dõi error rate, latency, saturation và business invariant; rollback artifact đã biết tốt khi evidence xấu.
+Giảm blast radius; rollback không sửa data migration hoặc side effect đã phát sinh.
+correlation_id -> trace_id -> spans
+Một request/job mang ID xuyên API, DB, Redis, broker và S3 để nối log với trace.
+Debug nhanh hơn; phải propagate đúng và không log token/PII.
+Metrics/logs -> Prometheus/Grafana/CloudWatch/Loki
+Metrics đo xu hướng; logs ghi sự kiện; dashboard/alert tạo hành động.
+Có nhiều góc nhìn; telemetry có overhead và cần retention/cardinality policy.
+Liên hệ thực tế - kiến trúc và request flow
+Đọc Case 04 (Meta) để thấy DNS/BGP có thể làm user journey biến mất trước khi request chạm API; đọc Case 07 (GitHub) để thấy network partition có thể kéo theo database failover và consistency. Khi học phần này, hãy vẽ cả đường dữ liệu, đường điều khiển và đường khôi phục.
+
+4.8 Casebook: 10 sự cố thật và bài lab AtlasFlow
+Đọc case theo công thức: timeline -> symptom -> boundary bị hỏng -> control còn thiếu -> mitigation -> prevention. Mục tiêu không phải kể chuyện cho vui, mà là luyện cách biến một sự cố production thành yêu cầu thiết kế, test và vận hành.
+Mảng trong lộ trình
+Case thật
+Bạn phải mô phỏng hoặc chứng minh
+Deployment, release, feature flag
+Knight Capital 2012; Cloudflare 2019
+Canary, kill switch, immutable artifact, rollback có bằng chứng
+Backup, restore, RPO/RTO, database
+GitLab 2017; GitHub 2018
+Restore thật, replication lag, failover, data integrity
+Network, DNS, routing, blast radius
+Meta 2021; Google Cloud 2019
+dig/curl/traceroute, route failure, staged config, recovery
+Cloud dependency và operational tooling
+AWS S3 2017
+Giới hạn blast radius, safe command, cell/partition, dependency map
+CDN, config và hiệu năng
+Fastly 2021; Cloudflare 2019
+Config validation, performance test, staged rollout, global kill
+Web security, IAM, patching
+Capital One 2019; Equifax 2017; Heartbleed 2014
+Least privilege, metadata boundary, patch inventory, secret rotation
+Cách dùng khi học
+Mỗi lần học một khái niệm, hãy mở đúng case liên quan và trả lời 5 câu: dữ liệu/packet/request đang ở đâu; failure bắt đầu từ đâu; tín hiệu nào phát hiện; thao tác giảm ảnh hưởng là gì; test nào ngăn tái diễn. Trả lời bằng diagram, log, metric hoặc test, không chỉ bằng định nghĩa.
+
+Case 01 - Knight Capital, 2012: một lần deploy sai biến thành thiệt hại 460 triệu USD
+Nhóm: Deployment, feature flag, rollback, business invariant
+Chuyện xảy ra
+Ngày 1/8/2012, Knight Capital triển khai code liên quan chương trình Retail Liquidity của NYSE. Một kỹ thuật viên không copy code mới lên một máy trong cụm; code cũ với flag DORMANT bị kích hoạt ngoài dự kiến. Trong 45 phút đầu phiên, router gửi hơn 4 triệu lệnh khi chỉ đang cố xử lý 212 lệnh khách hàng; SEC ghi nhận khoản lỗ hơn 460 triệu USD.
+Người dùng hoặc hệ thống thấy gì
+Hệ thống giao dịch phát sinh lệnh tự động bất thường và tích lũy vị thế ngoài ý muốn. Đáng chú ý, hệ thống đã phát ra 97 email báo lỗi nhưng chúng không được thiết kế và xử lý như alert có owner.
+Nguyên nhân kỹ thuật cần nhìn ra
+Artifact không đồng nhất giữa các node: cùng một release nhưng hành vi khác nhau.
+Feature flag/đường code cũ không có ownership, test và kill switch rõ ràng.
+Thiếu guardrail ở tầng nghiệp vụ: không có giới hạn tốc độ, notional, số lệnh hoặc circuit breaker đủ mạnh.
+Tín hiệu đã tồn tại nhưng không đi vào quy trình incident response.
+Bài học kiến trúc cho AtlasFlow
+CI/CD phải deploy immutable image theo commit SHA và xác nhận mọi replica cùng digest.
+Mọi feature flag cần owner, expiry date, default-off và đường tắt vô hiệu hóa.
+Ngoài HTTP 200, phải có business invariant: job không tăng đột biến, không vượt rate, không tạo duplicate side effect.
+Rollback là năng lực vận hành được diễn tập, không phải một nút trên lý thuyết.
+Chuyển thành bài lab
+Tạo một worker phiên bản lỗi làm submit job lặp; bật một feature flag sai; chạy canary 1 replica; dùng metric `jobs_created_total`, `duplicate_side_effect_total`, queue depth và kill switch để dừng. Viết rollback command và chứng minh artifact sau rollback.Nguồn chính thức: https://www.sec.gov/newsroom/press-releases/2013-222
+
+Case 02 - AWS S3, 2017: thao tác vận hành sai và blast radius quá lớn
+Nhóm: Cloud, operational safety, dependency, partitioning
+Chuyện xảy ra
+Ngày 28/2/2017, một thành viên đội S3 đang debug billing đã chạy một command trong playbook để loại bỏ một số server. Một input sai khiến số lượng server bị loại bỏ lớn hơn dự kiến, ảnh hưởng cả index subsystem và placement subsystem của S3 ở US-EAST-1.
+Người dùng hoặc hệ thống thấy gì
+S3 không phục vụ được các API GET, LIST, PUT và DELETE trong thời gian phục hồi. Nhiều dịch vụ phụ thuộc S3 trong cùng region như console S3, EC2 launch mới, EBS khi cần snapshot và Lambda cũng bị ảnh hưởng.
+Nguyên nhân kỹ thuật cần nhìn ra
+Command được ủy quyền nhưng không giới hạn được số capacity bị loại bỏ trong một lần.
+Một dependency dùng chung tạo blast radius liên vùng dịch vụ.
+Recovery lâu hơn dự kiến vì subsystem lớn đã lâu chưa được restart toàn bộ và cần safety checks.
+Ngay cả status dashboard cũng phụ thuộc S3 nên kênh thông tin bị suy giảm.
+Bài học kiến trúc cho AtlasFlow
+Runbook phải có precondition, dry-run, giới hạn batch và kiểm tra minimum capacity.
+Thiết kế cell/partition để một thao tác không kéo sập toàn bộ service.
+Map dependency của control plane, status page, logging và recovery tool; đừng giả định chúng luôn sống.
+Test restore/restart ở quy mô gần thực tế, không chỉ test happy path nhỏ.
+Chuyển thành bài lab
+Trong local lab, mô phỏng một command scale-down làm worker capacity tụt dưới ngưỡng. Thêm guardrail không cho thao tác khi dưới minimum, phân worker thành cell A/B, tắt một cell và đo error rate, queue backlog, recovery time.Nguồn chính thức: https://aws.amazon.com/message/41926/
+
+Case 03 - GitLab.com, 2017: có backup trên giấy nhưng không restore được
+Nhóm: Database, backup, replication, RPO/RTO
+Chuyện xảy ra
+Ngày 31/1/2017, GitLab.com gặp sự cố database sau một chuỗi vấn đề về tải và replication. Trong lúc xử lý, kỹ sư vô tình xóa thư mục dữ liệu của primary thay vì secondary. GitLab phải restore từ một backup cũ hơn và công bố mất một phần database data trong nhiều giờ.
+Người dùng hoặc hệ thống thấy gì
+GitLab.com unavailable trong nhiều giờ; các thay đổi về project, issue, comment, user và snippet trong khoảng thời gian sự cố không khôi phục được. Git repositories và wikis được lưu tách nên không bị mất theo cùng cách.
+Nguyên nhân kỹ thuật cần nhìn ra
+Replication không đồng nghĩa với backup độc lập: replica có thể lag hoặc bị thao tác sai cùng nguồn.
+Backup S3 được kỳ vọng có nhưng bucket rỗng; quy trình không có evidence kiểm tra hằng ngày.
+Script và thao tác recovery dễ nhầm target, thiếu confirmation và không tự động hóa đủ.
+RPO thực tế lớn hơn điều team tưởng vì restore point gần nhất không sẵn sàng.
+Bài học kiến trúc cho AtlasFlow
+AtlasFlow phải có backup schedule, checksum, retention và restore drill có đồng hồ.
+RPO/RTO phải đo được bằng bài thực hành, không ghi một con số đẹp trong README.
+Destructive command cần xác nhận hostname, environment, resource identity và dry-run.
+Data integrity quan trọng hơn việc khôi phục nhanh nhưng tạo dữ liệu sai.
+Chuyển thành bài lab
+Tạo backup PostgreSQL nhỏ, cố ý làm hỏng primary, restore sang instance mới, đo RPO/RTO. Thêm script có `--environment`, `--target-id`, confirmation và test tự fail nếu backup file rỗng hoặc checksum sai.Nguồn chính thức: https://about.gitlab.com/blog/postmortem-of-database-outage-of-january-31/
+
+Case 04 - Meta/Facebook, 2021: backbone mất kết nối kéo DNS ra khỏi Internet
+Nhóm: Network, BGP, DNS, control plane
+Chuyện xảy ra
+Ngày 4/10/2021, hệ thống quản lý capacity của backbone Facebook bị thay đổi khiến toàn bộ backbone bị rút khỏi hoạt động. DNS server ở các facility nhỏ không còn nói chuyện được với data center, nên chúng tự rút các BGP advertisement của mình.
+Người dùng hoặc hệ thống thấy gì
+DNS authoritative của Facebook trở nên unreachable dù server vẫn còn hoạt động. Người dùng không phân giải được tên miền và các ứng dụng Facebook/Instagram/Messenger không thể truy cập bình thường.
+Nguyên nhân kỹ thuật cần nhìn ra
+Network data plane và control plane liên kết với nhau bằng health signal; mất backbone làm DNS tự withdraw route.
+Kênh quản trị và truy cập vật lý bị ảnh hưởng cùng lúc, khiến việc sửa lỗi khó hơn.
+Một thay đổi trên backbone có thể lan qua DNS, HTTP, service discovery và toàn bộ user journey.
+Bài học kiến trúc cho AtlasFlow
+Khi vẽ architecture phải vẽ cả đường quản trị, DNS, status và out-of-band access.
+Kiểm thử network phải bao gồm route withdrawal, DNS timeout, stale resolver và recovery.
+Health check cần phân biệt service chết với đường tới service bị mất.
+Có ít nhất một kênh điều hành độc lập khi production plane gặp sự cố.
+Chuyển thành bài lab
+Dùng Docker Compose/kind để tắt network giữa API và dependency; quan sát `dig`, `curl`, `tracert`, TCP timeout và health check. Viết runbook phân biệt DNS failure, TCP failure, TLS failure và HTTP failure; thêm fallback status endpoint ngoài ingress chính.Nguồn chính thức: https://engineering.fb.com/2021/10/05/networking-traffic/outage-details/
+
+Case 05 - Cloudflare, 2019: một WAF rule làm CPU toàn mạng lên gần 100%
+Nhóm: WAF, regex, performance, staged rollout
+Chuyện xảy ra
+Ngày 2/7/2019, Cloudflare deploy một rule trong WAF Managed Rules. Regular expression có thể backtrack rất lớn, làm CPU của các process xử lý HTTP/HTTPS tăng gần 100% trên mạng lưới toàn cầu; Cloudflare ghi nhận core proxying, CDN và WAF bị ảnh hưởng trong 27 phút.
+Người dùng hoặc hệ thống thấy gì
+Nhiều website trả 502. Traffic giảm mạnh và đội SRE phải vô hiệu hóa WAF toàn cầu rồi test rollback theo một thành phố trước khi bật lại.
+Nguyên nhân kỹ thuật cần nhìn ra
+Unit test chức năng pass nhưng không đo CPU/time complexity của regex.
+Không staged rollout cho loại thay đổi có blast radius toàn cầu.
+Rollback chậm và đội vận hành khó truy cập một số hệ thống nội bộ khi edge bị ảnh hưởng.
+Một thay đổi bảo mật có thể tạo sự cố availability nếu không có performance budget.
+Bài học kiến trúc cho AtlasFlow
+Security rule cũng phải có performance test, timeout và complexity guard.
+Global configuration cần canary, percentage rollout và global kill switch.
+SLO/alert phải phát hiện cả saturation trước khi user-facing error tăng mạnh.
+Runbook phải có đường bypass và quyền truy cập được diễn tập.
+Chuyển thành bài lab
+Tạo endpoint WAF-like với regex xấu trên một worker; chạy k6 payload bình thường và payload kích hoạt backtracking; thêm CPU/time budget, canary 5%, alert saturation và nút disable rule. Ghi postmortem theo timeline.Nguồn chính thức: https://blog.cloudflare.com/details-of-the-cloudflare-outage-on-july-2-2019/
+
+Case 06 - Fastly, 2021: bug tiềm ẩn được kích hoạt bởi config hợp lệ
+Nhóm: CDN, configuration, latent bug, observability
+Chuyện xảy ra
+Ngày 8/6/2021, một bug phần mềm đã được deploy từ trước tại Fastly được kích hoạt khi một khách hàng thay đổi configuration hợp lệ. Fastly công bố 85% network trả lỗi và 95% network hoạt động bình thường trở lại trong 49 phút sau khi cô lập và disable configuration liên quan.
+Người dùng hoặc hệ thống thấy gì
+Nhiều website và dịch vụ dùng Fastly đồng thời trả lỗi, dù không phải khách hàng nào cũng thay đổi code hoặc deploy tại thời điểm đó.
+Nguyên nhân kỹ thuật cần nhìn ra
+Trigger nằm ở tổ hợp version + customer configuration, không chỉ ở một commit mới.
+Contract/config validation chưa bao phủ toàn bộ không gian input hợp lệ.
+Dependency bên ngoài có thể biến một config hợp lệ thành global incident.
+Bài học kiến trúc cho AtlasFlow
+Configuration là một phần của program: phải version, validate, test và rollback như code.
+Cần synthetic tests theo nhiều cấu hình hợp lệ, không chỉ test default.
+Observability nên gắn được lỗi với version/config hash và tenant bị ảnh hưởng.
+Chuyển thành bài lab
+Tạo workflow config có một field hợp lệ nhưng kích hoạt bug trong worker. Sinh test matrix config, lưu config hash trong trace, canary theo tenant/project và disable cấu hình bằng feature flag mà không cần rebuild image.Nguồn chính thức: https://www.fastly.com/blog/summary-of-june-8-outage
+
+Case 07 - GitHub, 2018: network partition ngắn nhưng recovery kéo dài hơn 24 giờ
+Nhóm: Distributed database, failover, consistency, recovery
+Chuyện xảy ra
+Ngày 21/10/2018, một hoạt động thay thiết bị quang làm mất connectivity giữa network hub US East và data center chính trong 43 giây. Sự kiện ngắn này kích hoạt failover database, tạo trạng thái topology không mong muốn và dẫn tới degraded service trong 24 giờ 11 phút.
+Người dùng hoặc hệ thống thấy gì
+Một số thông tin hiển thị cũ hoặc không nhất quán; webhook và GitHub Pages build bị ảnh hưởng. GitHub ưu tiên bảo toàn integrity dữ liệu nên chấp nhận giảm tính sẵn sàng trong lúc fail-forward và đồng bộ cluster.
+Nguyên nhân kỹ thuật cần nhìn ra
+Network partition có thể nguy hiểm hơn một node chết vì hai phía đều có thể nhận write.
+Failover tự động phải phù hợp với giả định của application về topology và latency.
+Restore backup nhiều terabyte là khả năng có thể mất nhiều giờ dù backup được tạo đều đặn.
+Queued work và read replica lag tạo thêm recovery tail sau khi database đã lên.
+Bài học kiến trúc cho AtlasFlow
+Thiết kế explicit consistency policy: lúc nào chấp nhận stale read, lúc nào dừng write.
+Test partition, split-brain, failover, backlog drain và replica catch-up riêng biệt.
+Runbook phải có quyết định ưu tiên integrity hay availability, không để incident tự quyết định thay team.
+Chuyển thành bài lab
+Chạy PostgreSQL primary/replica và worker; mô phỏng network partition, queue backlog và replica lag. Viết policy tạm dừng webhook/job mới, restore từ backup, catch up replica rồi mới mở traffic; đo thời gian từng bước.Nguồn chính thức: https://github.blog/news-insights/company-news/oct21-post-incident-analysis/
+
+Case 08 - Google Cloud, 2019: config intended cho một vùng nhưng áp vào nhiều vùng
+Nhóm: Network configuration, capacity, progressive rollout
+Chuyện xảy ra
+Ngày 2/6/2019, một thay đổi configuration vốn dành cho một nhóm server nhỏ được áp nhầm lên nhiều region lân cận. Các region đó mất hơn một nửa network capacity khả dụng, tạo congestion và làm nhiều dịch vụ Google suy giảm.
+Người dùng hoặc hệ thống thấy gì
+Tùy dịch vụ và vùng, người dùng thấy latency tăng, error rate tăng hoặc traffic bị giảm. Google ghi nhận các hệ thống phát hiện sự cố trong vài giây nhưng congestion cũng làm việc khôi phục chậm hơn.
+Nguyên nhân kỹ thuật cần nhìn ra
+Scope của config không được ràng buộc đủ chặt với target.
+Monitoring phát hiện nhanh nhưng detection không tự động đồng nghĩa với restoration nhanh.
+Capacity headroom và khả năng phục hồi cũng là một phần của network architecture.
+Bài học kiến trúc cho AtlasFlow
+IaC cần plan rõ affected resources và policy chặn scope bất thường.
+Progressive rollout phải có canary, automatic halt và rollback không phụ thuộc vào network đang nghẽn.
+Đặt capacity alert trước ngưỡng cạn kiệt, không chỉ alert khi request đã fail.
+Chuyển thành bài lab
+Tạo Terraform thay đổi security group/route cho một subnet, cố ý dùng selector quá rộng; dùng plan review và policy check để chặn. Sau đó mô phỏng capacity giảm bằng CPU/network limit, theo dõi p95, error rate và recovery.Nguồn chính thức: https://cloud.google.com/blog/topics/inside-google-cloud/an-update-on-sundays-service-disruption
+
+Case 09 - Capital One, 2019: WAF misconfiguration và ranh giới IAM/cloud metadata
+Nhóm: Web security, IAM, SSRF-style path, data access
+Chuyện xảy ra
+Năm 2019, theo thông cáo của Bộ Tư pháp Hoa Kỳ, dữ liệu của Capital One bị truy cập thông qua một web application firewall bị cấu hình sai. Vụ việc cho thấy một boundary ở edge có thể trở thành đường đi tới dữ liệu cloud nếu identity, network và storage policy không giới hạn đủ chặt.
+Người dùng hoặc hệ thống thấy gì
+Dữ liệu lưu trên các server/cloud storage bị truy cập trái phép; Capital One phát hiện sau khi một người dùng GitHub báo về bài đăng mô tả dữ liệu bị lấy.
+Nguyên nhân kỹ thuật cần nhìn ra
+WAF không phải là security boundary duy nhất; nó không thay thế IAM, network egress control và data-layer authorization.
+Workload identity phải có quyền tối thiểu, scope đúng bucket/prefix và không dùng credential rộng.
+Cloud metadata/role path cần được bảo vệ và giám sát; log phải đủ để truy vết access.
+Bài học kiến trúc cho AtlasFlow
+AtlasFlow phải test từ edge -> application -> identity -> S3/DB, không chỉ test login.
+Dùng role riêng cho API/worker, deny public storage và kiểm tra unauthorized object access.
+Security lab phải có evidence: policy, access log, alert, revoke/rotate và negative test.
+Chuyển thành bài lab
+Tạo endpoint mô phỏng fetch URL với allowlist; kiểm tra SSRF tới địa chỉ private bị chặn. Dùng IAM role chỉ đọc đúng bucket/prefix, bật audit log, thử đọc object khác tenant và chứng minh bị deny. Chỉ dùng dataset giả.Nguồn chính thức: https://www.justice.gov/usao-wdwa/pr/seattle-tech-worker-arrested-data-theft-involving-large-financial-services-company
+
+Case 10 - Equifax 2017 và Heartbleed 2014: dependency risk không kết thúc ở lúc build
+Nhóm: Patch management, dependency security, secrets
+Chuyện xảy ra
+Báo cáo GAO về vụ Equifax 2017 mô tả kẻ tấn công truy cập trái phép vào online dispute portal và dữ liệu của gần 150 triệu người. Còn advisory của OpenSSL về Heartbleed 2014 cho biết lỗi bounds check trong TLS heartbeat có thể làm lộ tối đa 64 KB memory cho client/server kết nối.
+Người dùng hoặc hệ thống thấy gì
+Một lỗi trong thư viện hoặc một asset chưa được patch có thể trở thành cửa vào dữ liệu, credential hoặc session. Sau khi patch, team vẫn phải đánh giá secret rotation vì credential có thể đã bị đọc trước đó.
+Nguyên nhân kỹ thuật cần nhìn ra
+Không có inventory/version visibility thì không biết asset nào vulnerable hoặc đã patch.
+Patch chỉ là hành động kỹ thuật; cần owner, SLA, evidence và kiểm tra sau deploy.
+Dependency security liên quan trực tiếp tới secret rotation, TLS certificate và incident response.
+Bài học kiến trúc cho AtlasFlow
+CI cần dependency scan, SBOM, image scan và policy cho critical CVE.
+Runtime phải có health/version endpoint và asset inventory để đối chiếu với production.
+Runbook bảo mật phải có cô lập, patch, invalidate session, rotate secret và kiểm tra log.
+Chuyển thành bài lab
+Thêm dependency có CVE vào test branch; để CI fail và tạo SBOM. Tạo checklist patch cho image/JAR, kiểm tra version runtime, rotate secret giả lập và truy vết access log trước/sau patch. Không đưa payload khai thác lên hệ thống thật.Nguồn chính thức: https://www.gao.gov/products/GAO-18-559; https://www.openssl.org/news/secadv/20140407.txt
+
+4.8.1 Mẫu phân tích incident áp dụng cho mọi case
+1. Impact: ai bị ảnh hưởng, workflow nào hỏng, dữ liệu có mất/đổi không?2. Timeline: deploy/change -> first signal -> detection -> mitigation -> recovery.3. Boundary: code, config, network, identity, data, dependency hay operator action?4. Evidence: metric, log, trace, audit log, diff, command history, backup/restore proof.5. Mitigation: hành động reversible nào giảm blast radius nhanh nhất?6. Prevention: test, guardrail, owner, alert, runbook và deadline cụ thể.7. AtlasFlow lab: mô phỏng trong dữ liệu giả, có reset và postmortem.
+
+Nếu bạn thấy...
+Đừng kết luận vội
+Hãy kiểm tra
+5xx tăng
+API chắc chắn lỗi code
+Dependency, saturation, timeout, deploy gần nhất, trace downstream
+Latency tăng
+Cần thêm server ngay
+P95/P99, queue, DB pool, lock, network RTT, cache hit
+Pod restart
+Kubernetes bị lỗi
+Exit code, liveness/readiness, OOM, dependency, rollout diff
+Unauthorized access
+Chỉ cần thêm WAF
+Identity, object authorization, IAM, egress, audit log, secrets
+Backup thành công
+Đã khôi phục được
+Restore drill, checksum, RPO/RTO, data integrity, owner
+Nguyên tắc làm project
+AtlasFlow không cần tuyên bố chịu được mọi sự cố. Giá trị nằm ở việc bạn biết giới hạn của hệ thống, tạo failure có kiểm soát, thu evidence, khôi phục, rồi ghi lại thay đổi cần làm. Đó là tư duy của Architect và SRE.
+
+5. Technology stack và trade-off
+Layer
+Chosen
+Problem solved
+Failure/security/metric focus
+Language
+Java 21
+Strong typing, concurrency, mature runtime
+Heap, GC pause, thread pool, dependency CVE
+Backend
+Spring Boot
+REST, validation, security, transactions, actuator
+Timeout, exception mapping, startup/readiness
+DB
+PostgreSQL
+Durable relational source of truth
+Locks, pool, slow query, backup/restore
+Cache
+Redis
+Reduce read latency and rate-limit
+Hit ratio, evictions, stampede, stale data
+Broker
+RabbitMQ
+Work queue and delivery semantics
+Queue depth, unacked, retry, DLQ
+Storage
+S3/MinIO
+Durable object storage and direct upload
+Policy, size, checksum, lifecycle
+Runtime
+Docker/Compose
+Reproducible local environment
+Image size, non-root, resource limits
+Orchestration
+kind/minikube
+Scheduling, probes, rollout, RBAC
+Restarts, pending pods, HPA
+IaC
+Terraform
+Versioned infrastructure
+State, drift, least privilege
+Delivery
+GitHub Actions/ECR
+Repeatable build/deploy
+Artifact integrity, secret exposure, rollback
+Observability
+OTel/Prom/Grafana
+Find latency, errors and request path
+P95/P99, trace gaps, alert quality
+Load test
+k6
+Controlled traffic and failure evidence
+RPS, latency, saturation, error rate
+5.1 RabbitMQ versus Kafka
+Tiêu chí
+RabbitMQ
+Kafka
+Quyết định
+Mô hình
+Broker/queue/routing
+Distributed append-only log
+RabbitMQ cho work queue
+Replay
+Không phải điểm mạnh mặc định
+Native replay theo offset
+Chưa cần ở MVP
+Delivery
+ACK/NACK, DLQ trực quan
+Consumer offset
+RabbitMQ dễ quan sát cho người mới
+Workload
+Task processing, command
+Event stream, analytics
+Nếu có event streaming, làm ADR riêng
+Scale
+Đủ cho project và lab
+Mạnh ở throughput/partition
+Không tối ưu sớm
+5.2 Khi nào không nên dùng công nghệ
+Không dùng Redis để che một query sai hoặc để giữ dữ liệu duy nhất.
+Không dùng queue cho thao tác cần response đồng bộ ngay nếu chưa thiết kế trạng thái pending.
+Không dùng Kubernetes chỉ để chạy một container khi Docker Compose đã đủ cho mục tiêu hiện tại.
+Không dùng NAT Gateway trong mọi lab AWS; chi phí tồn tại theo giờ và theo dữ liệu xử lý.
+Không tách microservice nếu chưa có boundary, contract test, ownership và cách quan sát độc lập.
+Liên hệ thực tế - technology stack
+Case 05 và Case 06 cho thấy một rule/config cũng là software cần test performance, version, canary và rollback. Việc chọn RabbitMQ, Redis, S3 hay Kubernetes trong AtlasFlow phải đi kèm câu hỏi: khi dependency chậm, chết hoặc trả dữ liệu cũ thì workflow sẽ làm gì?
+
+6. Database, API, network và security model
+6.1 Database schema logic
+users(id, email, password_hash, status, created_at)organizations(id, name, created_at)memberships(user_id, organization_id, role_id, status)roles(id, organization_id, name)projects(id, organization_id, name, status)api_keys(id, project_id, prefix, secret_hash, last_used_at)workflows(id, project_id, version, status)workflow_steps(id, workflow_id, position, task_type, config_json)jobs(id, project_id, workflow_id, status, idempotency_key, created_at)job_executions(id, job_id, attempt, status, worker_id, started_at, finished_at)files(id, project_id, object_key, checksum, size_bytes, status)outbox_events(id, aggregate_type, aggregate_id, event_type, payload, published_at)audit_logs(id, organization_id, actor_id, action, resource_type, resource_id, request_id, created_at)
+
+6.2 Index và transaction labs
+Lab
+Thiết kế thử
+Evidence cần thu
+Fix
+Missing index
+Query jobs theo project_id + created_at không có index
+EXPLAIN ANALYZE, p95
+Composite index và đo lại
+Slow query
+Join workflow/job với filter rộng
+DB time, rows scanned
+Query plan, projection, pagination
+Deadlock
+Hai transaction lock project/job theo thứ tự khác nhau
+PostgreSQL log/deadlock error
+Lock ordering, retry transaction
+Pool exhausted
+Pool nhỏ + request giữ connection lâu
+Active/idle/pending connections
+Timeout, pool sizing, transaction scope
+Rollback
+Lỗi sau insert job trước commit
+Không có partial record
+Exception mapping + integration test
+6.3 REST API contract
+POST /api/v1/jobsRequest: { workflow_id, input_file_id, idempotency_key }Response 202: { job_id, execution_id, status: QUEUED }Pipeline:Authentication -> Authorization -> Validation -> Transaction-> Outbox -> Audit -> ResponseGET /api/v1/jobs/{id}Response: status, attempt, progress, timestamps, error_summaryPOST /api/v1/files/uploadResponse: file_id, object_key, presigned_url, expires_at
+
+6.4 Security boundaries
+Boundary
+Control
+Test
+Identity
+Argon2id/BCrypt, access token short-lived, refresh rotation
+Invalid password, token expiry, replay refresh token
+Tenant
+organization_id/project_id scope in every query
+Cross-organization object access
+API key
+Store prefix + hash, redact logs, revoke
+Leaked key cannot be recovered or reused after revoke
+Network
+Private data subnet, SG least privilege, no public DB
+Port scan and unauthorized connection
+Container
+Non-root, read-only FS where possible, scan image
+Trivy, inspect UID/capabilities
+File
+Private S3, content type/size allowlist, presigned expiry
+Oversized/malicious file and wrong key
+Audit
+Actor/action/resource/request_id, append-only access
+Unauthorized audit mutation
+Liên hệ thực tế - database, API và security
+Case 03 và Case 07 nối trực tiếp với backup, replication, consistency và recovery. Case 09 và Case 10 nối với IAM, WAF, dependency, patching và secret rotation. Mỗi boundary trong schema/API phải có một negative test và một evidence khi khôi phục.
+
+7. DevOps, Terraform, Kubernetes và CI/CD
+7.1 Repository structure
+atlasflow/├── backend/│   ├── src/main/java/com/atlasflow/│   │   ├── auth/ organization/ project/ workflow/ job/ file/ audit/│   │   ├── shared/│   │   └── config/│   └── src/test/├── docker/│   ├── Dockerfile│   ├── compose.yml│   └── nginx/├── infrastructure/terraform/│   ├── modules/network/ compute/ database/ storage/ monitoring/│   └── environments/lab/├── kubernetes/base/ overlays/local/ overlays/staging/├── monitoring/prometheus/ grafana/ otel/├── scripts/├── docs/adr architecture api database security runbooks postmortems├── .github/workflows/└── README.md
+
+7.2 Terraform module design
+Module
+Input
+Output
+Safety
+network
+CIDR, AZ, subnet ranges
+VPC, subnet IDs, route IDs
+No default public DB route
+compute
+AMI, instance type, security group
+Instance IDs, private IP
+Tag + shutdown plan
+database
+engine, size, subnet group
+RDS endpoint, secret reference
+No hard-coded password
+storage
+bucket name, lifecycle
+Bucket ARN, role policy
+Block public access
+monitoring
+retention, alarm thresholds
+Log group, alarms
+Avoid unbounded logs
+7.3 Kubernetes object map
+Namespace atlasflowDeployment api -> ReplicaSet -> PodsDeployment worker -> PodsService api -> ClusterIPIngress -> Nginx Ingress ControllerConfigMap -> non-secret configSecret -> credentials/reference onlyRequests/Limits -> scheduling and protectionReadiness -> can receive trafficLiveness -> process is aliveHPA -> scale on CPU/custom metricRBAC -> least privilegeNetworkPolicy -> allowed pod-to-pod trafficPVC -> persistent state only when necessary
+
+Giải thích sơ đồ
+Kubernetes là lớp điều phối sau khi Docker/local runtime đã rõ. Không dùng Kubernetes để che việc bạn chưa hiểu process, port, health, resource và dependency.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Namespace atlasflow
+Ranh giới logic gom resource của project và tránh lẫn với namespace khác.
+Quản lý dễ hơn; không phải boundary security tuyệt đối.
+Deployment -> ReplicaSet -> Pods
+Deployment giữ desired state; ReplicaSet giữ số replica; Pod chạy container.
+Tự recreate/rollout; thêm controller behavior cần quan sát.
+Service -> ClusterIP
+Địa chỉ ổn định để API/worker gọi service dù Pod đổi IP.
+Service discovery đơn giản; routing tới Pod khỏe cần readiness đúng.
+Ingress -> Nginx Ingress Controller
+Nhận HTTP từ ngoài cluster và route theo host/path tới Service.
+Centralized edge; thêm TLS/config/controller failure mode.
+ConfigMap/Secret
+ConfigMap chứa non-secret; Secret chứa credential/reference theo policy.
+Tách config khỏi image; Secret trong cluster vẫn cần encryption/access control.
+Requests/Limits -> probes
+Scheduler dùng requests; runtime giới hạn bằng limits; readiness/liveness quyết định traffic/restart.
+Bảo vệ tài nguyên và tự chữa; thông số sai tạo pending/OOM/restart loop.
+HPA/RBAC/NetworkPolicy/PVC
+HPA scale; RBAC giới hạn API; NetworkPolicy giới hạn mạng; PVC giữ state khi thực sự cần.
+Tăng khả năng vận hành; stateful workload và policy làm debug phức tạp.
+7.4 CI/CD acceptance
+Pull request phải chạy unit test, integration test, formatting/lint và dependency scan.
+Image có tag immutable theo commit SHA; không deploy tag latest vào production simulation.
+Staging deploy phải có health check, smoke test và lưu artifact/test report.
+Rollback dùng image/tag đã biết tốt; không rebuild lại cùng một source trong lúc incident.
+Secrets lấy từ GitHub environment secrets hoặc AWS Secrets Manager, không in ra log.
+Liên hệ thực tế - DevOps và release
+Case 01 là bài học kinh điển về release không đồng nhất và business guardrail; Case 05 là bài học về global rollout. Trong CI/CD của AtlasFlow, deploy chỉ được coi là hoàn thành khi test, scan, health check, smoke test và rollback đều có bằng chứng.
+
+8. Observability, SRE và failure engineering
+8.1 Metrics, logs, traces
+Tín hiệu
+Cần ghi
+Dùng để trả lời
+Metrics
+request rate, error rate, latency, p95/p99, queue depth, worker throughput, cache hit/miss, DB pool
+Hệ thống đang chậm ở đâu và có đang bão hòa không?
+Logs
+timestamp, level, service, request_id, trace_id, actor, resource, error class
+Sự kiện cụ thể nào đã xảy ra?
+Traces
+root span + DB/Redis/MQ/S3 child spans
+Một request chậm đã đi qua component nào?
+Alerts
+threshold, duration, owner, runbook link
+Khi nào cần hành động và hành động nào?
+8.2 SLI/SLO/SLA
+Khái niệm
+AtlasFlow example
+Cách đo
+SLI
+Tỷ lệ POST /jobs trả 202 trong thời gian mục tiêu
+successful requests / valid requests
+SLO
+99% job submission success trong 30 ngày
+Prometheus recording rule
+SLA
+Cam kết giả lập với user demo
+Tài liệu sản phẩm, không tuyên bố production thật
+Error budget
+1% request budget có thể lỗi
+Budget burn rate và deployment policy
+RTO
+Khôi phục API local/cloud trong 30 phút
+Incident exercise clock
+RPO
+Mất dữ liệu tối đa 24 giờ trong lab backup
+Restore point và backup schedule
+8.3 Reliability patterns
+Pattern
+Dùng ở đâu
+Không được hiểu sai
+Timeout
+HTTP, DB, Redis, broker, S3
+Timeout không phải fix cho dependency chậm vô hạn
+Exponential backoff
+Retry broker/DB/network transient
+Có max attempts + jitter; không retry lỗi validation
+Circuit breaker
+Dependency có failure kéo dài
+Open circuit phải có fallback/alert
+Bulkhead
+Thread pool/worker concurrency
+Một workload không được chiếm hết tài nguyên
+Idempotency
+Submit job và worker execution
+Không đồng nghĩa với exactly-once
+Backpressure
+Queue và upload/process workload
+Phải có limit, reject hoặc load shedding
+Graceful shutdown
+API/worker deploy
+Dừng nhận traffic rồi drain in-flight work
+Liên hệ thực tế - observability và SRE
+Case 05 cho thấy alert phải bắt được saturation; Case 08 cho thấy detection nhanh vẫn có thể recovery chậm; Case 07 cho thấy backlog và replica lag kéo dài sau khi lỗi đầu tiên đã hết. Hãy ghi timeline bằng metric, log, trace, audit log và change diff.
+
+9. Roadmap 15 phase trong 130 ngày
+Nhịp đề xuất: 5 ngày học/xây, 1 ngày kiểm thử và ghi chép, 1 ngày nghỉ hoặc bù. Mỗi phase kết thúc bằng artifact và câu hỏi kiểm tra, không kết thúc chỉ vì đã xem video.
+Phase
+Ngày
+Chủ đề
+Đầu ra
+0
+1-4
+Foundation
+Repository, scope, ADR, local health, cost guardrail
+1
+5-9
+Product Contract
+Use case, state machine, domain glossary, acceptance criteria
+2
+10-21
+Backend Core
+Spring Boot modular monolith, REST, validation, errors
+3
+22-34
+PostgreSQL
+Schema, Flyway, index, transaction, lock/query labs
+4
+35-43
+Security
+Auth, JWT, refresh, RBAC, API key, audit
+5
+44-49
+Redis
+Cache-aside, TTL, rate limit, stampede lab
+6
+50-60
+RabbitMQ/Outbox
+Producer, consumer, retry, DLQ, ordering, delivery
+7
+61-75
+Worker/Workflow
+Execution lifecycle, idempotency, cancel, heartbeat
+8
+76-81
+S3/File
+Presigned upload, metadata, checksum, lifecycle
+9
+82-90
+Docker
+Compose, Nginx, resource limits, local prod simulation
+10
+91-101
+AWS Network
+VPC, subnet, SG, ALB, Route 53, TLS lab
+11
+102-109
+Terraform
+Modules, state, plan/apply/destroy, drift
+12
+110-118
+Kubernetes
+Pods, services, ingress, probes, HPA, RBAC, rollback
+13
+119-124
+CI/CD
+Test, scan, image, ECR, staging, deploy, rollback
+14
+125-130
+Observability/SRE/Portfolio
+Dashboard, 20 failures, runbooks, postmortem, README
+9.1 Weekly operating rhythm
+Ngày
+Việc chính
+Đầu ra cuối ngày
+Thứ 2
+Concept + architecture
+Một diagram hoặc ADR được cập nhật
+Thứ 3
+Implementation block
+Một vertical slice chạy được
+Thứ 4
+Test + inspect
+Test evidence và một metric/log mới
+Thứ 5
+Network/security lab
+Command output, packet/evidence, threat note
+Thứ 6
+Failure/optimization
+Failure card hoặc benchmark
+Thứ 7
+Documentation + demo
+README, screenshot, short demo script
+Chủ nhật
+Review + buffer
+Postmortem nhỏ, backlog tuần sau, nghỉ
+10. AWS cost strategy cho 100 USD / 130 ngày
+Cost rule
+Tài khoản học tập không được xem credit là giấy phép chạy resource liên tục. Mỗi cloud lab phải có mục tiêu, start time, test evidence, stop/destroy step và cost check.
+
+10.1 Local lab và cloud lab
+Local-first
+Cloud-only khi cần chứng minh
+Docker, Compose, PostgreSQL, Redis, RabbitMQ, MinIO, Prometheus, Grafana, OTel, kind/minikube, k6
+VPC, subnet, route table, SG/NACL, EC2, ALB, Route 53, RDS, S3, IAM, ECR, CloudWatch, Secrets Manager
+10.2 Budget bands
+Mức sử dụng
+Mục tiêu
+Hành động
+0-5 USD
+IAM, MFA, Budget, S3 nhỏ, CloudWatch cơ bản
+Thiết lập ngay; verify billing
+5-20 USD
+EC2 + Docker deploy
+Chạy 2-4 giờ/lab, stop/terminate
+20-35 USD
+RDS PostgreSQL lab
+Single-AZ, backup nhỏ, destroy sau lab
+35-50 USD
+ALB, DNS, TLS, network
+Lab ngắn, không để ALB/NAT tồn tại
+50-70 USD
+K8s cloud simulation/load test
+Chỉ chạy khi có hypothesis và evidence
+70-80 USD
+Dự phòng
+Không mở lab mới nếu chưa audit
+80+ USD
+Stop cloud expansion
+Chuyển toàn bộ sang local, rà soát billing
+10.3 AWS lab cards
+Lab
+Resource
+Run time
+Kiểm tra
+Shutdown/destroy
+IAM/Budget
+IAM user/role, MFA, Budget
+Một lần
+Billing dashboard + alert
+Xóa user/key thừa
+EC2
+Một instance nhỏ + EBS
+2-4 giờ
+Cost Explorer, instance state
+Stop nếu dùng lại; terminate nếu xong
+RDS
+PostgreSQL Single-AZ
+2-4 giờ
+RDS status, storage, backup
+Snapshot nếu cần, delete instance
+ALB
+ALB + target group
+1-2 giờ
+Target health, access log
+Delete ALB/listener/target group
+S3
+Private bucket + lifecycle
+Theo dự án
+Object size, public access block
+Empty then delete bucket khi xong
+ECR
+Repository + immutable tags
+Theo đợt
+Image count/storage
+Xóa image cũ/repository cuối lab
+CloudWatch
+Log group + alarm
+Theo lab
+Retention, ingestion
+Đặt retention và xóa lab logs
+AWS Budgets hỗ trợ theo dõi cost/usage và gửi cảnh báo; dữ liệu billing có độ trễ, vì vậy phải kết hợp budget với kiểm tra resource và quy trình destroy. NAT Gateway có phí theo giờ tồn tại và theo dữ liệu xử lý, nên không dùng mặc định trong lab học tập.
+Liên hệ thực tế - AWS và cloud operations
+Case 02 cho thấy thao tác cloud được ủy quyền vẫn có thể gây outage nếu không có safe command, minimum capacity, partition và dependency map. Case 08 và Case 09 cho thấy cloud security là sự kết hợp của IAM, network, storage policy và logging.
+
+11. Failure lab: 20 tình huống production mô phỏng
+Không tạo lỗi trên dữ liệu thật. Mỗi thí nghiệm dùng dataset nhỏ, có log timestamp, metric snapshot trước/sau, trace id, command tạo lỗi, cách khôi phục và prevention item.
+#
+Failure
+Cách tạo
+Tín hiệu
+Fix/prevention
+1
+Backend crash
+Kill process/container
+5xx/health fail/restart
+Readiness, restart, replica
+2
+Database unavailable
+Stop PostgreSQL/RDS lab
+Timeout, pool pending
+Timeout, retry bounded, restore
+3
+Redis unavailable
+Stop Redis
+Hit ratio 0, DB load tăng
+Cache optional, circuit breaker
+4
+Queue unavailable
+Stop RabbitMQ
+Outbox pending tăng
+Publisher retry, alert
+5
+Worker crash
+Kill worker
+Unacked/requeue, throughput 0
+Supervisor, idempotency
+6
+Queue backlog
+Giảm worker concurrency
+Queue depth/p99 tăng
+Scale, backpressure
+7
+Network latency
+tc/netem hoặc proxy delay
+P95/P99 tăng
+Timeout, bulkhead
+8
+DNS failure
+Sai local record
+Resolve fail
+nslookup/dig, TTL, fallback
+9
+TLS problem
+Expired/wrong cert
+Handshake fail
+Renewal/runbook/alert
+10
+Disk full
+Fill test volume
+Write/log fail
+Retention, disk alert
+11
+CPU 100%
+k6 + expensive endpoint
+CPU/p99 tăng
+Profile, rate limit, scale
+12
+Memory leak
+Controlled allocation loop
+RSS/OOM/restart
+Heap dump, limit, fix leak
+13
+Container crash
+Exit code non-zero
+Restart count
+Probe, resource limit
+14
+Kubernetes pod crash
+Delete pod/kill process
+Replica recreate
+Readiness/liveness
+15
+Bad deployment
+Deploy known-bad image
+5xx/error budget burn
+Rollback immutable tag
+16
+Pool exhausted
+Small pool + slow transaction
+Pending connections
+Scope/timeout/tune
+17
+Slow query
+Drop index on test DB
+DB time/rows scanned
+EXPLAIN/index/pagination
+18
+Deadlock
+Opposite lock order
+Deadlock exception
+Lock order/retry
+19
+Cache stampede
+Invalidate hot key
+DB spike
+Jitter/single-flight/lock
+20
+AWS resource failure
+Stop EC2 or revoke policy
+Availability/permission error
+Runbook, Terraform recreate
+11.1 Failure card template
+Incident ID:Start/end time:Environment and commit:User-visible symptom:Metrics before/after:Relevant logs and trace IDs:Hypothesis:Test performed:Root cause:Immediate mitigation:Permanent fix:Prevention/alert/runbook update:What would we change in architecture?
+
+Liên hệ thực tế - failure engineering
+20 failure cards trong handbook nên được viết theo format của Casebook: impact, timeline, evidence, mitigation, root cause, prevention và owner. Không tạo lỗi trên dữ liệu thật; mọi lab phải có reset, giới hạn blast radius và cách xác nhận recovery.
+
+PHASE 0: Foundation
+Thời gian: ngày 1-4
+1. Mục tiêu
+Tạo nền tảng có thể lặp lại và không đốt AWS.
+2. Kiến thức cần học
+Git, Java 21, Maven, Docker Compose, Linux process/port, AWS IAM/MFA/Budget.
+3. Công nghệ sử dụng
+Java 21, Spring Boot skeleton, PostgreSQL local, Docker, GitHub, AWS Budgets.
+4. Tại sao cần công nghệ này
+Phase 0 dùng Java 21, Spring Boot skeleton, PostgreSQL local, Docker, GitHub, AWS Budgets. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu repeatability và cost control.
+4.1 Local First gate của phase
+Phase 0 chỉ được chuyển sang AWS sau khi phần Foundation đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Tạo nền tảng có thể lặp lại và không đốt AWS.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho Foundation; dùng Java 21, Spring Boot skeleton, PostgreSQL local, Docker, GitHub, AWS Budgets.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+Developer -> Git -> Java skeleton -> health endpointLocal Docker network -> PostgreSQLAWS boundary: IAM/MFA/Budget before resources
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Developer -> Git -> Java skeleton -> health endpoint
+Bạn tạo một runtime tối thiểu; Git lưu thay đổi; health endpoint chứng minh process sống.
+Bắt đầu nhỏ để phân biệt lỗi code, dependency và môi trường; chưa có business nên chưa chứng minh domain.
+Local Docker network -> PostgreSQL
+Container gọi nhau bằng service name qua network nội bộ; volume giữ dữ liệu test.
+Tái lập môi trường; đổi lại phải hiểu DNS/container port và lifecycle volume.
+AWS boundary: IAM/MFA/Budget
+Chỉ chuẩn bị identity và cost guardrail, chưa chạy workload AWS.
+Ngăn đốt tiền và credential leak trước khi học cloud; chậm hơn việc bấm tạo resource ngay.
+6. Folder structure
+docs/adr/docker/compose.ymlbackend/scripts/
+
+7. Code cần viết
+Không viết business logic; tạo health endpoint và local dependency profile.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. Chưa tạo AWS runtime.
+9. Database cần thay đổi
+Chưa có business schema; chỉ test connectivity và volume.
+10. API cần tạo
+GET /actuator/health; GET /api/v1/ping
+11. Network cần hiểu
+localhost vs container hostname; Docker bridge and port mapping.
+12. Security cần làm
+MFA, least privilege, credential hygiene, .gitignore, no root workload.
+13. Docker cần làm
+Compose PostgreSQL profile, volume, healthcheck.
+14. AWS cần làm nếu có
+Set Budget, MFA and cost tags only.
+15. Monitoring cần thêm
+Health UP/DOWN, Docker status.
+16. Test cần viết
+Build smoke, health endpoint, Compose connectivity.
+17. Failure scenario
+Port occupied, wrong env, DB volume missing, AWS credential misused.
+18. Lab thực hành
+Run java/docker/aws version checks; create repo; draw request path.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 0: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 0: Giải thích container gọi DB bằng hostname service và biết destroy cloud lab. Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+Repository sạch, .env.example, ADR, architecture baseline, local run guide.
+20. Definition of Done
+Giải thích container gọi DB bằng hostname service và biết destroy cloud lab.
+21. Câu hỏi kiểm tra kiến thức
+Giải thích container gọi DB bằng hostname service và biết destroy cloud lab. Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 1: Product Contract
+Thời gian: ngày 5-9
+1. Mục tiêu
+Chốt domain, state machine, invariants và acceptance criteria.
+2. Kiến thức cần học
+DDD-lite, actor/use case, job lifecycle, idempotency key, API status semantics.
+3. Công nghệ sử dụng
+Markdown, Mermaid/ASCII, OpenAPI draft.
+4. Tại sao cần công nghệ này
+Phase 1 dùng Markdown, Mermaid/ASCII, OpenAPI draft. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu domain contract và acceptance criteria.
+4.1 Local First gate của phase
+Phase 1 chỉ được chuyển sang AWS sau khi phần Product Contract đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Chốt domain, state machine, invariants và acceptance criteria.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho Product Contract; dùng Markdown, Mermaid/ASCII, OpenAPI draft.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+Actor -> use case -> state machine -> acceptance criteriaWorkflow -> Job -> Execution -> terminal states
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Actor -> use case -> state machine
+Người dùng/operator kích hoạt use case; state machine mô tả trạng thái hợp lệ của job.
+Chốt nghiệp vụ trước code; có chi phí viết tài liệu và tranh luận edge case.
+Workflow -> Job -> Execution
+Workflow là định nghĩa; Job là yêu cầu chạy; Execution là một lần thử cụ thể.
+Tách definition khỏi run history giúp retry/audit; data model nhiều bảng hơn.
+terminal states
+SUCCEEDED/FAILED/CANCELLED kết thúc một execution; không được quay ngược.
+Dễ báo cáo và reconcile; cần xử lý partial side effect trước terminal state.
+6. Folder structure
+docs/product-contract.mddocs/domain-glossary.mddocs/job-state-machine.md
+
+7. Code cần viết
+Viết glossary, job state transition, error catalog và demo workflow.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. Chốt tên event, trạng thái và lỗi HTTP.
+9. Database cần thay đổi
+Chưa tạo bảng; mô hình hóa entity và transition trước.
+10. API cần tạo
+OpenAPI draft: POST /projects, POST /workflows, POST /jobs
+11. Network cần hiểu
+Client -> use case contract; status 202 and polling/event semantics.
+12. Security cần làm
+Threat model actors, trust boundaries, abuse cases, non-goals.
+13. Docker cần làm
+Không thêm image mới; vẽ dependency map.
+14. AWS cần làm nếu có
+Không cần AWS.
+15. Monitoring cần thêm
+No runtime metrics; define acceptance metrics.
+16. Test cần viết
+State transition unit tests and acceptance scenarios.
+17. Failure scenario
+Invalid state transition, duplicate submit, ambiguous cancellation.
+18. Lab thực hành
+Write workflow use cases and state transition table.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 1: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 1: Vì sao job submit trả 202 thay vì chờ xử lý? Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+Product contract, state machine, use-case matrix, non-goals.
+20. Definition of Done
+Vì sao job submit trả 202 thay vì chờ xử lý?
+21. Câu hỏi kiểm tra kiến thức
+Vì sao job submit trả 202 thay vì chờ xử lý? Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 2: Backend Core
+Thời gian: ngày 10-21
+1. Mục tiêu
+Dựng modular monolith với vertical slice đầu tiên.
+2. Kiến thức cần học
+Spring MVC, DI, validation, exception mapping, transaction boundary, actuator.
+3. Công nghệ sử dụng
+Java 21, Spring Boot, Maven, JUnit, Testcontainers.
+4. Tại sao cần công nghệ này
+Phase 2 dùng Java 21, Spring Boot, Maven, JUnit, Testcontainers. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu boundary rõ giữa HTTP và business logic.
+4.1 Local First gate của phase
+Phase 2 chỉ được chuyển sang AWS sau khi phần Backend Core đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Dựng modular monolith với vertical slice đầu tiên.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho Backend Core; dùng Java 21, Spring Boot, Maven, JUnit, Testcontainers.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+HTTP -> Controller -> Application Service -> Port -> AdapterErrors -> problem response -> trace/request id
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+HTTP -> Controller
+HTTP adapter nhận method/path/body và map vào command/query.
+Tách protocol khỏi domain; controller không nên chứa business rule.
+Controller -> Application Service
+Application service điều phối use case, transaction và port.
+Dễ test/use lại; thêm abstraction nếu slice quá nhỏ.
+Port -> Adapter
+Port mô tả dependency; adapter hiện thực DB/queue/external API.
+Đổi infrastructure dễ hơn; cần tránh interface giả tạo không có boundary thật.
+Errors -> problem response -> trace/request id
+Lỗi domain/validation/infrastructure được map thành response chuẩn và evidence.
+Client hiểu cách xử lý; không được lộ stack trace/secret.
+6. Folder structure
+backend/src/main/java/.../job/{api,application,domain,infrastructure}backend/src/test/
+
+7. Code cần viết
+Auth chưa hoàn thiện; tạo project/workflow/job API với in-memory hoặc DB stub rồi chuyển DB phase 3.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. Bật actuator, validation, correlation id và profile.
+9. Database cần thay đổi
+Chưa phụ thuộc schema production; thêm integration test DB boundary.
+10. API cần tạo
+POST /projects; GET /projects; POST /workflows; POST /jobs
+11. Network cần hiểu
+HTTP method/status/header, keep-alive, connection pool, proxy boundary.
+12. Security cần làm
+Input validation, error redaction, dependency baseline, secure headers.
+13. Docker cần làm
+Build backend image only after core slice.
+14. AWS cần làm nếu có
+Optional: none; local-first.
+15. Monitoring cần thêm
+Request count, status, latency, exception counter, correlation ID.
+16. Test cần viết
+Controller validation, service unit, error contract, integration skeleton.
+17. Failure scenario
+Validation bypass, uncaught exception, slow endpoint, connection leak.
+18. Lab thực hành
+Trace request with curl and inspect response/error mapping.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 2: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 2: Phân biệt controller, application service và domain rule. Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+Package theo module, controller/service/repository ports, API contract.
+20. Definition of Done
+Phân biệt controller, application service và domain rule.
+21. Câu hỏi kiểm tra kiến thức
+Phân biệt controller, application service và domain rule. Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 3: PostgreSQL
+Thời gian: ngày 22-34
+1. Mục tiêu
+Biến database thành source of truth có transaction và query evidence.
+2. Kiến thức cần học
+Schema, Flyway, index, EXPLAIN, isolation, lock, deadlock, pool, pagination, backup/restore.
+3. Công nghệ sử dụng
+PostgreSQL, Flyway, HikariCP, Testcontainers.
+4. Tại sao cần công nghệ này
+Phase 3 dùng PostgreSQL, Flyway, HikariCP, Testcontainers. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu durability và concurrency evidence.
+4.1 Local First gate của phase
+Phase 3 chỉ được chuyển sang AWS sau khi phần PostgreSQL đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Biến database thành source of truth có transaction và query evidence.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho PostgreSQL; dùng PostgreSQL, Flyway, HikariCP, Testcontainers.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+API -> transaction -> PostgreSQL                 +-> Outbox recordMigration -> schema -> query plan
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+API -> transaction -> PostgreSQL
+Submit job ghi state trong transaction; DB commit hoặc rollback cả nhóm thay đổi.
+Durability và consistency; transaction dài gây lock và pool pressure.
++-> Outbox record
+Event chờ publish ghi cùng transaction với job.
+Giảm dual-write loss; thêm publisher, duplicate event và cleanup.
+Migration -> schema -> query plan
+Migration version hóa schema; query plan cho biết DB thực thi thế nào.
+Tái lập deploy; migration sai hoặc index dư làm downtime/cost.
+6. Folder structure
+backend/src/main/resources/db/migration/V1__baseline.sqldocs/database/scripts/db/
+
+7. Code cần viết
+Tạo migration cho users/org/projects/workflows/jobs/executions/outbox/audit; viết transaction tests.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. Flyway, Hikari pool, transaction timeout và query logging cho test.
+9. Database cần thay đổi
+Tạo đầy đủ schema users/org/projects/workflows/jobs/executions/outbox/audit và index cơ bản.
+10. API cần tạo
+POST /jobs; GET /jobs/{id}; GET /workflows/{id}
+11. Network cần hiểu
+DB socket 5432, TCP timeout, pool connection lifecycle, transaction lock.
+12. Security cần làm
+SQL injection prevention, least DB privileges, backup access.
+13. Docker cần làm
+Postgres/Testcontainers for integration.
+14. AWS cần làm nếu có
+RDS concept/short lab later, not yet.
+15. Monitoring cần thêm
+DB pool, query latency, slow query evidence.
+16. Test cần viết
+Migration, transaction rollback, index/query, lock/deadlock, restore.
+17. Failure scenario
+Slow query, deadlock, pool exhausted, DB unavailable, rollback failure.
+18. Lab thực hành
+Run EXPLAIN, create deadlock, exhaust pool, restore backup.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 3: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 3: Vì sao transaction boundary của submit job bao gồm outbox? Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+Schema diagram, migration history, query benchmark, restore guide.
+20. Definition of Done
+Vì sao transaction boundary của submit job bao gồm outbox?
+21. Câu hỏi kiểm tra kiến thức
+Vì sao transaction boundary của submit job bao gồm outbox? Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 4: Security
+Thời gian: ngày 35-43
+1. Mục tiêu
+Bảo vệ identity, tenant boundary và audit ngay từ đầu.
+2. Kiến thức cần học
+Password hashing, JWT, refresh rotation, RBAC, API key, CORS/CSRF, OWASP, threat model.
+3. Công nghệ sử dụng
+Spring Security, Argon2id/BCrypt, Redis later, OWASP tools.
+4. Tại sao cần công nghệ này
+Phase 4 dùng Spring Security, Argon2id/BCrypt, Redis later, OWASP tools. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu tenant isolation và auditability.
+4.1 Local First gate của phase
+Phase 4 chỉ được chuyển sang AWS sau khi phần Security đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Bảo vệ identity, tenant boundary và audit ngay từ đầu.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho Security; dùng Spring Security, Argon2id/BCrypt, Redis later, OWASP tools.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+Client -> token -> Spring Security filter -> principal          -> organization/project RBAC -> audit
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Client -> token -> Spring Security filter
+Client gửi credential/token; filter parse, verify và tạo principal.
+Auth tập trung; token stolen vẫn nguy hiểm nếu TTL/rotation kém.
+principal -> organization/project RBAC
+Principal được scope theo membership/role trước khi gọi use case.
+Tenant isolation; query thiếu scope là bug nghiêm trọng.
+RBAC -> audit
+Mỗi action nhạy cảm ghi actor/resource/request_id.
+Traceability; sync audit có latency và phải chống sửa log.
+6. Folder structure
+backend/.../authbackend/.../authorizationdocs/security/threat-model.md
+
+7. Code cần viết
+Register/login/refresh, project authorization, API key hash, audit interceptor.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. JWT issuer/audience, password policy, CORS allowlist, audit fields.
+9. Database cần thay đổi
+users, organizations, memberships, roles, api_keys, refresh_tokens, audit_logs.
+10. API cần tạo
+POST /auth/register; POST /auth/login; POST /auth/refresh; API key endpoints
+11. Network cần hiểu
+TLS token transport, CORS, CSRF, API key over HTTPS, tenant boundary.
+12. Security cần làm
+Password hash, token rotation, RBAC, API key hash, audit, OWASP tests.
+13. Docker cần làm
+Backend secret through env; no password in image.
+14. AWS cần làm nếu có
+IAM role/policy review; no production auth claims.
+15. Monitoring cần thêm
+Login failure, authorization deny, audit count, token errors.
+16. Test cần viết
+Auth, expiry, refresh rotation, RBAC cross-tenant, API key revoke, OWASP.
+17. Failure scenario
+Broken access control, brute force, token replay, API key leak, SQL injection.
+18. Lab thực hành
+Attempt unauthorized project access and fix it.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 4: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 4: Vì sao chỉ kiểm tra chữ ký JWT chưa đủ cho authorization? Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+Threat model, auth flow, security test suite, audit schema.
+20. Definition of Done
+Vì sao chỉ kiểm tra chữ ký JWT chưa đủ cho authorization?
+21. Câu hỏi kiểm tra kiến thức
+Vì sao chỉ kiểm tra chữ ký JWT chưa đủ cho authorization? Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 5: Redis
+Thời gian: ngày 44-49
+1. Mục tiêu
+Dùng Redis có chủ đích cho cache và rate limiting.
+2. Kiến thức cần học
+Cache-aside, TTL, invalidation, hit/miss, stampede, jitter, distributed lock, rate limit.
+3. Công nghệ sử dụng
+Redis, Spring Data Redis, Micrometer metrics.
+4. Tại sao cần công nghệ này
+Phase 5 dùng Redis, Spring Data Redis, Micrometer metrics. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu latency control và load shedding.
+4.1 Local First gate của phase
+Phase 5 chỉ được chuyển sang AWS sau khi phần Redis đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Dùng Redis có chủ đích cho cache và rate limiting.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho Redis; dùng Redis, Spring Data Redis, Micrometer metrics.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+Request -> Redis cache -> hit/miss -> PostgreSQL fallbackRate limit -> Redis counter -> allow/reject
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Request -> Redis cache -> hit/miss -> PostgreSQL fallback
+Đọc cache nếu key còn hợp lệ; miss thì query DB và set TTL.
+Giảm latency/DB load; stale data, stampede và cache invalidation là chi phí.
+Rate limit -> Redis counter -> allow/reject
+Counter theo user/IP/key trong window/TTL; vượt ngưỡng trả 429.
+Bảo vệ tài nguyên; distributed counter cần clock/window policy.
+6. Folder structure
+backend/.../cachebackend/.../ratelimitmonitoring/redis/
+
+7. Code cần viết
+Cache project/workflow reads, login rate limit, idempotency short record nếu cần; DB vẫn là truth.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. Redis endpoint, TTL, max attempts rate limit, fallback mode.
+9. Database cần thay đổi
+Bổ sung cache metadata không phải source of truth; rate-limit keys ở Redis.
+10. API cần tạo
+GET /projects/{id}; rate-limited login/job endpoints
+11. Network cần hiểu
+Redis TCP 6379, latency, serialization, connection reuse.
+12. Security cần làm
+Rate-limit brute force, Redis auth/TLS concept, no sensitive cache values.
+13. Docker cần làm
+Redis profile, persistence optional for lab.
+14. AWS cần làm nếu có
+Optional ElastiCache concept; local Redis first.
+15. Monitoring cần thêm
+Cache hit/miss, Redis latency, rate-limit reject.
+16. Test cần viết
+Cache hit/miss, stale invalidation, Redis down fallback, rate limit.
+17. Failure scenario
+Redis down, stale cache, stampede, latency increase, eviction.
+18. Lab thực hành
+Measure cache hit/miss and create stampede with controlled concurrency.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 5: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 5: Nếu Redis chết, feature nào vẫn phải hoạt động? Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+Cache policy table, TTL rationale, fallback behavior, metrics.
+20. Definition of Done
+Nếu Redis chết, feature nào vẫn phải hoạt động?
+21. Câu hỏi kiểm tra kiến thức
+Nếu Redis chết, feature nào vẫn phải hoạt động? Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 6: RabbitMQ and Outbox
+Thời gian: ngày 50-60
+1. Mục tiêu
+Đưa background work ra khỏi request và chứng minh delivery semantics.
+2. Kiến thức cần học
+Producer, consumer, ack/nack, retry, DLQ, ordering, at-least-once, backpressure, outbox publisher.
+3. Công nghệ sử dụng
+RabbitMQ, Spring AMQP, Testcontainers.
+4. Tại sao cần công nghệ này
+Phase 6 dùng RabbitMQ, Spring AMQP, Testcontainers. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu asynchronous delivery và backpressure.
+4.1 Local First gate của phase
+Phase 6 chỉ được chuyển sang AWS sau khi phần RabbitMQ and Outbox đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Đưa background work ra khỏi request và chứng minh delivery semantics.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho RabbitMQ and Outbox; dùng RabbitMQ, Spring AMQP, Testcontainers.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+Transaction -> outbox -> publisher -> exchange -> queueWorker -> ack/nack -> retry -> DLQ
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Transaction -> outbox -> publisher
+DB commit tạo event; publisher poll/claim và publish.
+Không mất event vì dual-write; publisher cần retry/lease.
+exchange -> queue -> worker
+Exchange route message vào queue; worker consume và ACK/NACK.
+Tách producer/consumer; delivery duplicate và ordering cần policy.
+retry -> DLQ
+Message lỗi transient retry bounded; poison message đưa DLQ.
+Không chặn queue chính; cần replay và alert owner.
+6. Folder structure
+backend/.../outboxbackend/.../messagingdocker/rabbitmq/
+
+7. Code cần viết
+Create outbox, publisher, queue/exchange, retry policy, DLQ and poison-message handling.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. Exchange/queue/DLQ, prefetch, ack mode, retry delay, publisher confirm.
+9. Database cần thay đổi
+outbox_events, message metadata, published_at, retry_count hoặc delivery_attempts.
+10. API cần tạo
+POST /jobs; GET /jobs/{id}; internal outbox/worker endpoints
+11. Network cần hiểu
+RabbitMQ ports, TCP connection/channel, prefetch, ACK and redelivery.
+12. Security cần làm
+Message poison handling, no secret payload, queue permissions, DLQ access.
+13. Docker cần làm
+RabbitMQ management profile, queue topology.
+14. AWS cần làm nếu có
+RabbitMQ local; managed broker not required.
+15. Monitoring cần thêm
+Publish/consume count, queue depth, unacked, retry, DLQ.
+16. Test cần viết
+Outbox publish, ACK/NACK, retry, DLQ, duplicate message, ordering boundary.
+17. Failure scenario
+Broker down, backlog, poison message, duplicate delivery, DLQ growth.
+18. Lab thực hành
+Stop broker, observe outbox/backlog, recover and replay safely.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 6: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 6: Vì sao at-least-once yêu cầu idempotency? Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+Message contract, topology diagram, consumer tests, backlog dashboard seed.
+20. Definition of Done
+Vì sao at-least-once yêu cầu idempotency?
+21. Câu hỏi kiểm tra kiến thức
+Vì sao at-least-once yêu cầu idempotency? Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 7: Worker and Workflow
+Thời gian: ngày 61-75
+1. Mục tiêu
+Xây execution engine đơn giản nhưng có trạng thái, retry và cancellation.
+2. Kiến thức cần học
+Worker concurrency, lease/heartbeat, checkpoint, timeout, graceful shutdown, compensation.
+3. Công nghệ sử dụng
+Spring worker process, RabbitMQ, PostgreSQL, S3 later.
+4. Tại sao cần công nghệ này
+Phase 7 dùng Spring worker process, RabbitMQ, PostgreSQL, S3 later. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu durable execution và recovery.
+4.1 Local First gate của phase
+Phase 7 chỉ được chuyển sang AWS sau khi phần Worker and Workflow đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Xây execution engine đơn giản nhưng có trạng thái, retry và cancellation.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho Worker and Workflow; dùng Spring worker process, RabbitMQ, PostgreSQL, S3 later.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+Queue -> worker claim -> execution state -> task -> checkpoint                                -> S3/result -> notification
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Queue -> worker claim -> execution state
+Worker nhận task, claim attempt và cập nhật RUNNING/heartbeat.
+Có recovery khi process chết; cần lease/timeout tránh job treo.
+task -> checkpoint -> S3/result
+Task làm từng phần, checkpoint và ghi result object/metadata.
+Job dài có thể resume; checkpoint tăng state và phải idempotent.
+notification
+Thông báo sau khi state/result bền vững; retry notification riêng.
+Không mất thông báo; tránh xử lý file lặp vì notification retry.
+6. Folder structure
+backend/.../workerbackend/.../executiondocs/runbooks/worker.md
+
+7. Code cần viết
+Worker consume task, claim execution, run allowed task types, update progress, ack only after durable update.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. Worker concurrency, heartbeat interval, execution timeout, graceful shutdown.
+9. Database cần thay đổi
+job_executions, attempt, worker_id, heartbeat, started/finished_at, error_summary.
+10. API cần tạo
+POST /jobs/{id}/cancel; POST /jobs/{id}/retry; GET /jobs/{id}/events
+11. Network cần hiểu
+Worker-to-broker connection, heartbeat, backpressure, graceful drain.
+12. Security cần làm
+Worker task allowlist, file/path validation, cancellation authorization.
+13. Docker cần làm
+Worker separate command/profile, restart and concurrency.
+14. AWS cần làm nếu có
+Worker local; cloud only after local evidence.
+15. Monitoring cần thêm
+Worker throughput, active jobs, execution latency, heartbeat, timeout.
+16. Test cần viết
+Worker success, crash/retry, cancel race, idempotent side effect, graceful drain.
+17. Failure scenario
+Worker crash, stuck execution, timeout, lost heartbeat, retry storm.
+18. Lab thực hành
+Kill worker mid-task and prove no duplicate final artifact.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 7: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 7: Nếu worker chết sau side effect nhưng trước ACK thì sao? Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+Job demo end-to-end, retry/cancel tests, worker heartbeat, runbook.
+20. Definition of Done
+Nếu worker chết sau side effect nhưng trước ACK thì sao?
+21. Câu hỏi kiểm tra kiến thức
+Nếu worker chết sau side effect nhưng trước ACK thì sao? Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 8: S3 and File Processing
+Thời gian: ngày 76-81
+1. Mục tiêu
+Tách object storage khỏi API server và bảo vệ file lifecycle.
+2. Kiến thức cần học
+Object key, presigned URL, multipart upload, metadata, checksum, lifecycle, IAM policy.
+3. Công nghệ sử dụng
+AWS S3, MinIO, AWS SDK for Java.
+4. Tại sao cần công nghệ này
+Phase 8 dùng AWS S3, MinIO, AWS SDK for Java. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu object durability và direct upload.
+4.1 Local First gate của phase
+Phase 8 chỉ được chuyển sang AWS sau khi phần S3 and File Processing đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Tách object storage khỏi API server và bảo vệ file lifecycle.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho S3 and File Processing; dùng AWS S3, MinIO, AWS SDK for Java.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+Client -> presigned URL -> private S3API metadata/checksum -> READY -> workflow input
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Client -> presigned URL -> private S3
+API cấp capability URL ngắn hạn; client upload trực tiếp object storage.
+Giảm API bandwidth; URL/permissions/expiry phải được giới hạn.
+API metadata/checksum -> READY
+API xác minh object và ghi READY trước khi workflow tham chiếu.
+Data/control plane rõ; có bước complete và cleanup pending.
+READY -> workflow input
+Chỉ object đã verify mới trở thành input hợp lệ của job.
+Integrity tốt hơn; thêm một state và HEAD/checksum cost.
+6. Folder structure
+backend/.../fileinfrastructure/s3/docs/storage/
+
+7. Code cần viết
+Upload init/complete, private bucket, checksum/size verification, result artifact.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. Bucket policy, presigned expiry, max file size, allowed MIME, lifecycle.
+9. Database cần thay đổi
+files, object_key, checksum, size_bytes, content_type, status, uploaded_at.
+10. API cần tạo
+POST /files/upload; POST /files/{id}/complete; GET /files/{id}/download-url
+11. Network cần hiểu
+Client-to-S3 path, presigned request, DNS/TLS to object storage.
+12. Security cần làm
+Private bucket, IAM policy, content validation, presigned expiry.
+13. Docker cần làm
+MinIO local, S3-compatible endpoint config.
+14. AWS cần làm nếu có
+Create private S3 bucket for upload lab, then lifecycle.
+15. Monitoring cần thêm
+Upload success/failure, size, checksum mismatch, S3 latency.
+16. Test cần viết
+presigned expiry, checksum, size/type rejection, object missing.
+17. Failure scenario
+S3 policy deny, partial upload, wrong checksum, large object.
+18. Lab thực hành
+Upload private object with presigned URL and test expiry.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 8: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 8: Vì sao client upload trực tiếp S3 thay vì stream qua API? Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+File flow diagram, S3 policy, size/type tests, cleanup lifecycle.
+20. Definition of Done
+Vì sao client upload trực tiếp S3 thay vì stream qua API?
+21. Câu hỏi kiểm tra kiến thức
+Vì sao client upload trực tiếp S3 thay vì stream qua API? Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 9: Docker Production Simulation
+Thời gian: ngày 82-90
+1. Mục tiêu
+Chạy toàn hệ thống local như một production slice.
+2. Kiến thức cần học
+Image layers, multistage build, network, volumes, resource limits, non-root, Nginx reverse proxy.
+3. Công nghệ sử dụng
+Docker, Compose, Nginx, profiles.
+4. Tại sao cần công nghệ này
+Phase 9 dùng Docker, Compose, Nginx, profiles. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu reproducible runtime và local production behavior.
+4.1 Local First gate của phase
+Phase 9 chỉ được chuyển sang AWS sau khi phần Docker Production Simulation đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Chạy toàn hệ thống local như một production slice.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho Docker Production Simulation; dùng Docker, Compose, Nginx, profiles.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+Nginx -> API/worker -> Postgres/Redis/RabbitMQ/MinIOCompose network + healthchecks + resource limits
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Nginx -> API/worker
+Reverse proxy định tuyến và giới hạn traffic; worker không public route.
+Edge boundary rõ; thêm hop và config cần test.
+Compose network + healthchecks
+Service discovery bằng hostname; healthcheck xác định dependency sẵn sàng.
+Local gần production hơn; healthcheck sai tạo restart loop.
+resource limits
+CPU/memory limit làm failure có kiểm soát.
+Bảo vệ máy học; limit quá thấp gây OOM/latency giả.
+6. Folder structure
+docker/Dockerfiledocker/compose.ymldocker/nginx/.dockerignore
+
+7. Code cần viết
+Compose API/worker/Postgres/Redis/RabbitMQ/MinIO/OTel; healthchecks, logs, restart policy.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. Compose profiles, healthcheck, non-root, CPU/memory limit, log rotation.
+9. Database cần thay đổi
+Không đổi schema lớn; thêm seed/test data và DB healthcheck.
+10. API cần tạo
+No public API expansion; add /actuator/health/readiness and proxy headers
+11. Network cần hiểu
+Compose DNS, network isolation, Nginx upstream and keep-alive.
+12. Security cần làm
+Non-root, read-only FS, image scan, no secrets in image or compose.
+13. Docker cần làm
+Multistage build, non-root, Nginx, limits, logs.
+14. AWS cần làm nếu có
+EC2 short-lived Docker host if local capacity insufficient.
+15. Monitoring cần thêm
+Container CPU/memory/restarts, Nginx 4xx/5xx.
+16. Test cần viết
+Compose restart, healthcheck, non-root, image scan, proxy smoke.
+17. Failure scenario
+Container crash, disk full, CPU limit, log flood, upstream unavailable.
+18. Lab thực hành
+Inspect container network, process, UID, ports, logs and limits.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 9: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 9: Container restart khác process restart và host failure thế nào? Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+One-command local setup, image scan, resource limit test, topology diagram.
+20. Definition of Done
+Container restart khác process restart và host failure thế nào?
+21. Câu hỏi kiểm tra kiến thức
+Container restart khác process restart và host failure thế nào? Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 10: AWS Networking
+Thời gian: ngày 91-101
+1. Mục tiêu
+Hiểu network cloud bằng lab ngắn và có cost boundary.
+2. Kiến thức cần học
+VPC, CIDR, subnet, route table, IGW, NAT concept, SG, NACL, EC2, ALB, Route 53, TLS.
+3. Công nghệ sử dụng
+AWS VPC, EC2, ALB, Route 53, ACM if available, CloudWatch.
+4. Tại sao cần công nghệ này
+Phase 10 dùng AWS VPC, EC2, ALB, Route 53, ACM if available, CloudWatch. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu cloud network boundary và TLS evidence.
+4.1 Local First gate của phase
+Phase 10 chỉ được chuyển sang AWS sau khi phần AWS Networking đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Hiểu network cloud bằng lab ngắn và có cost boundary.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho AWS Networking; dùng AWS VPC, EC2, ALB, Route 53, ACM if available, CloudWatch.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+Internet -> Route53 -> ALB/TLS -> EC2/APIPrivate route concept -> RDS/S3 endpoint
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Internet -> Route 53 -> ALB/TLS -> EC2/API
+DNS tới ALB; ALB terminate TLS và route vào target.
+Giống request path cloud; thêm certificate, SG, health check, phí.
+Private route concept -> RDS/S3 endpoint
+App kết nối data private; S3 đi qua endpoint/policy khi cấu hình.
+Giảm public exposure; route/endpoint khó debug và cần kiểm soát cost.
+6. Folder structure
+infrastructure/aws-network-lab/docs/network/scripts/aws/
+
+7. Code cần viết
+Tạo public ALB/EC2 lab, private data concept, test DNS/TCP/TLS/HTTP, destroy.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. CIDR, route, SG ingress/egress, DNS record, TLS listener, deletion order.
+9. Database cần thay đổi
+RDS lab tạo qua Terraform/console; không migrate dữ liệu thật.
+10. API cần tạo
+ALB target health; public API through HTTPS; DNS record
+11. Network cần hiểu
+DNS -> TCP -> TLS -> HTTP -> ALB -> target; SG vs NACL.
+12. Security cần làm
+MFA, IAM role, SG least privilege, no public DB, TLS certificate.
+13. Docker cần làm
+EC2 Docker host only as short lab.
+14. AWS cần làm nếu có
+Main AWS network lab: VPC/subnet/SG/ALB/DNS/TLS.
+15. Monitoring cần thêm
+ALB target health, request count, TLS/HTTP status, EC2 metrics.
+16. Test cần viết
+DNS/TLS/HTTP/ALB smoke, SG negative tests, cost destroy.
+17. Failure scenario
+DNS failure, TLS error, SG deny, target unhealthy, route mistake.
+18. Lab thực hành
+Use nslookup/dig/curl/ss/tcpdump and document DNS/TCP/TLS path.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 10: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 10: SG stateful khác NACL stateless ra sao? Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+Network diagram, packet evidence, SG matrix, cost log, destroy checklist.
+20. Definition of Done
+SG stateful khác NACL stateless ra sao?
+21. Câu hỏi kiểm tra kiến thức
+SG stateful khác NACL stateless ra sao? Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 11: Terraform
+Thời gian: ngày 102-109
+1. Mục tiêu
+Mã hóa infrastructure và lặp lại lab không click thủ công.
+2. Kiến thức cần học
+State, backend concept, module, variable, output, plan/apply/destroy, drift, import.
+3. Công nghệ sử dụng
+Terraform, AWS provider, tfvars, validation.
+4. Tại sao cần công nghệ này
+Phase 11 dùng Terraform, AWS provider, tfvars, validation. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu repeatable infrastructure và drift control.
+4.1 Local First gate của phase
+Phase 11 chỉ được chuyển sang AWS sau khi phần Terraform đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Mã hóa infrastructure và lặp lại lab không click thủ công.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho Terraform; dùng Terraform, AWS provider, tfvars, validation.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+Terraform root -> modules -> AWS resourcesstate -> plan -> apply -> outputs -> destroy
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Terraform root -> modules -> AWS resources
+Root truyền input; module tạo resource theo boundary.
+Repeatable và review được; state/module dependency tạo complexity.
+state -> plan -> apply -> outputs -> destroy
+State theo dõi resource; plan preview; apply tạo; outputs feed deploy; destroy dọn.
+Giảm click ops/drift; state lock/secret/destroy nhầm là risk.
+6. Folder structure
+infrastructure/terraform/modules/{network,compute,storage,monitoring}infrastructure/terraform/environments/lab
+
+7. Code cần viết
+Modules network/compute/storage/monitoring; tags, outputs, no secrets in state if avoidable.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. Variables, outputs, tags, state strategy, plan approval, destroy safety.
+9. Database cần thay đổi
+RDS parameter/subnet group/backup config nếu cloud lab cần.
+10. API cần tạo
+No new business API; Terraform outputs feed deployment scripts
+11. Network cần hiểu
+Terraform-created routes, dependencies and state-driven topology.
+12. Security cần làm
+State access, tfvars secret hygiene, policy review, plan approval.
+13. Docker cần làm
+Terraform may provision host; app container remains artifact.
+14. AWS cần làm nếu có
+Codify selected cloud lab resources.
+15. Monitoring cần thêm
+Terraform apply/destroy logs, resource tags, cost evidence.
+16. Test cần viết
+plan validation, apply outputs, destroy, drift detection.
+17. Failure scenario
+State lock, drift, wrong region, destroy dependency, leaked resource.
+18. Lab thực hành
+terraform plan/apply/destroy in a tagged lab.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 11: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 11: State chứa gì và ai được quyền đọc state? Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+Terraform plan artifact, module README, destroy proof, drift exercise.
+20. Definition of Done
+State chứa gì và ai được quyền đọc state?
+21. Câu hỏi kiểm tra kiến thức
+State chứa gì và ai được quyền đọc state? Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 12: Kubernetes
+Thời gian: ngày 110-118
+1. Mục tiêu
+Hiểu scheduling, service discovery, probes, rollout và RBAC local-first.
+2. Kiến thức cần học
+Pod, Deployment, ReplicaSet, Service, Ingress, ConfigMap, Secret, requests/limits, HPA, RBAC, NetworkPolicy, PVC.
+3. Công nghệ sử dụng
+kind/minikube, kubectl, Helm optional, Nginx Ingress.
+4. Tại sao cần công nghệ này
+Phase 12 dùng kind/minikube, kubectl, Helm optional, Nginx Ingress. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu orchestration, probes và rollout behavior.
+4.1 Local First gate của phase
+Phase 12 chỉ được chuyển sang AWS sau khi phần Kubernetes đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Hiểu scheduling, service discovery, probes, rollout và RBAC local-first.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho Kubernetes; dùng kind/minikube, kubectl, Helm optional, Nginx Ingress.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+Ingress -> Service -> Deployment -> Podsprobes + requests/limits + HPA + RBAC + NetworkPolicy
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Ingress -> Service -> Deployment -> Pods
+Ingress nhận HTTP; Service ổn định địa chỉ; Deployment quản replica; Pod chạy container.
+Scale/rollout rõ; nhiều layer và network policy cần debug.
+probes + requests/limits
+Readiness điều khiển nhận traffic; liveness restart; requests/limits ảnh hưởng scheduling/OOM.
+Tự chữa và bảo vệ node; probe/limit sai gây outage tự động.
+HPA + RBAC + NetworkPolicy
+HPA scale; RBAC giới hạn API; NetworkPolicy giới hạn pod-to-pod.
+Tăng resilience/security; metrics/config/policy phức tạp hơn.
+6. Folder structure
+kubernetes/base/{api,worker,config}kubernetes/overlays/localkubernetes/overlays/staging
+
+7. Code cần viết
+Deploy API/worker, Postgres external/local, probes, rolling update, rollback, HPA experiment.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. Namespace, probes, resources, RBAC, secret reference, rollout strategy.
+9. Database cần thay đổi
+Stateful DB ưu tiên external; PVC chỉ dùng để hiểu concept, không che failure.
+10. API cần tạo
+Ingress host; Service ports; health endpoints; internal worker no public route
+11. Network cần hiểu
+Cluster DNS, Service virtual IP, Ingress, pod network policy.
+12. Security cần làm
+RBAC, Secret, NetworkPolicy, service account, pod security.
+13. Docker cần làm
+Docker image is input to Kubernetes Deployment.
+14. AWS cần làm nếu có
+No EKS by default; kind/minikube local.
+15. Monitoring cần thêm
+Pod readiness, restarts, pending, HPA, API latency.
+16. Test cần viết
+rollout, readiness, liveness, HPA, RBAC deny, NetworkPolicy deny.
+17. Failure scenario
+Pending pod, CrashLoopBackOff, failed readiness, bad rollout, policy deny.
+18. Lab thực hành
+Scale, kill pod, fail readiness, rollback deployment.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 12: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 12: Readiness fail khác liveness fail thế nào? Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+Manifests base/overlay, rollout evidence, pod failure lab, network policy test.
+20. Definition of Done
+Readiness fail khác liveness fail thế nào?
+21. Câu hỏi kiểm tra kiến thức
+Readiness fail khác liveness fail thế nào? Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 13: CI/CD
+Thời gian: ngày 119-124
+1. Mục tiêu
+Đưa commit thành artifact có thể deploy và rollback.
+2. Kiến thức cần học
+Branching, PR, unit/integration test, artifact, image tag, registry, environment, blue/green/canary concept.
+3. Công nghệ sử dụng
+GitHub Actions, ECR, Docker, k6 smoke test.
+4. Tại sao cần công nghệ này
+Phase 13 dùng GitHub Actions, ECR, Docker, k6 smoke test. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu delivery confidence và rollback.
+4.1 Local First gate của phase
+Phase 13 chỉ được chuyển sang AWS sau khi phần CI/CD đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Đưa commit thành artifact có thể deploy và rollback.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho CI/CD; dùng GitHub Actions, ECR, Docker, k6 smoke test.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+PR -> test -> scan -> image SHA -> ECR -> staginghealth -> smoke -> approval -> production/rollback
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+PR -> test -> scan -> image SHA -> ECR
+Change được kiểm tra và đóng gói immutable trước deploy.
+Rollback chính xác; pipeline và registry thêm thời gian/cost.
+ECR -> staging -> health/smoke -> approval
+Staging nhận đúng image; kiểm tra endpoint/user flow rồi mới promote.
+Giảm blast radius; staging không thể giống production hoàn toàn.
+production/rollback
+Deploy theo rollout; metric xấu thì quay image đã biết tốt.
+Khôi phục nhanh; data migration/side effect cần kế hoạch riêng.
+6. Folder structure
+.github/workflows/{ci,cd,security}.ymldocker/tagging.mddocs/release/
+
+7. Code cần viết
+Pipeline test -> scan -> build -> push -> staging -> health -> approval -> rollback.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. Environments, immutable tags, approvals, deploy timeout, rollback command.
+9. Database cần thay đổi
+Migration chạy trước deploy và có backward-compatible strategy.
+10. API cần tạo
+No new domain API; smoke API and deployment health contract
+11. Network cần hiểu
+Runner -> registry -> cluster/API; secret and artifact path.
+12. Security cần làm
+Branch protection, OIDC/short-lived cloud credentials if possible, scan gates.
+13. Docker cần làm
+Build/push scan image with immutable tag.
+14. AWS cần làm nếu có
+ECR repository and short staging deploy.
+15. Monitoring cần thêm
+Pipeline duration, scan result, deployment health, rollback count.
+16. Test cần viết
+CI failure, security gate, deploy, smoke, rollback.
+17. Failure scenario
+Broken image, secret missing, failed migration, bad deployment, rollback.
+18. Lab thực hành
+Create failing PR, scan failure, deploy and rollback.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 13: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 13: Vì sao immutable image tag tốt hơn latest? Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+Workflow YAML, evidence, failed deploy rollback, release notes.
+20. Definition of Done
+Vì sao immutable image tag tốt hơn latest?
+21. Câu hỏi kiểm tra kiến thức
+Vì sao immutable image tag tốt hơn latest? Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+PHASE 14: Observability, SRE and Portfolio
+Thời gian: ngày 125-130
+1. Mục tiêu
+Chứng minh hệ thống qua metrics/logs/traces, failure labs và tài liệu portfolio.
+2. Kiến thức cần học
+OTel, Prometheus, Grafana, SLI/SLO/SLA, RTO/RPO, error budget, incident response, postmortem.
+3. Công nghệ sử dụng
+OpenTelemetry, Prometheus, Grafana, Tempo/Loki or CloudWatch, k6.
+4. Tại sao cần công nghệ này
+Phase 14 dùng OpenTelemetry, Prometheus, Grafana, Tempo/Loki or CloudWatch, k6. để giải quyết đúng problem của phase, tạo evidence trước khi mở rộng scope. Nếu bỏ lớp này, hệ thống sẽ thiếu visibility và operational learning.
+4.1 Local First gate của phase
+Phase 14 chỉ được chuyển sang AWS sau khi phần Observability, SRE and Portfolio đã chạy được trên máy local, bạn hiểu request/data path và có evidence cho cả happy path lẫn failure path. Mục tiêu phase: Chứng minh hệ thống qua metrics/logs/traces, failure labs và tài liệu portfolio.
+Bước bắt buộc
+Việc phải làm trên local
+Evidence để qua gate
+Implement
+Cài và viết slice nhỏ nhất cho Observability, SRE and Portfolio; dùng OpenTelemetry, Prometheus, Grafana, Tempo/Loki or CloudWatch, k6.; chưa mở rộng sang cloud.
+Code review tự thực hiện, README setup, cấu hình local tách khỏi secret.
+Run
+Khởi động từ trạng thái rỗng bằng lệnh đã ghi; kiểm tra process, port, container, dependency và health endpoint.
+Một người khác có thể chạy lại; log startup và dependency check không mơ hồ.
+Test
+Viết unit/integration/acceptance test cho input hợp lệ, input sai và boundary của phase.
+Test report, expected result, dữ liệu test nhỏ và lệnh chạy lặp lại.
+Failure test
+Cố ý tắt dependency, tạo timeout, duplicate, permission deny hoặc resource saturation phù hợp với phase.
+Failure card có impact, metric/log/trace trước-sau và giới hạn blast radius.
+Debug
+Dùng log, metric, trace, SQL plan, network command hoặc container inspection để tìm root cause; không sửa mò.
+Timeline, hypothesis bị loại, root cause và command/evidence xác nhận.
+Optimize
+Đo baseline rồi thay đúng một biến: query/index, pool, concurrency, timeout, image, cache hoặc config.
+Benchmark trước-sau, trade-off, ngưỡng không được vượt và ADR/engineering note.
+Cổng chuyển sang AWS
+Chỉ mở AWS khi local có: một vertical slice chạy từ đầu đến cuối; test xanh; ít nhất một failure đã được tạo và khôi phục; dashboard/log đủ để giải thích; benchmark hoặc giới hạn tài nguyên; lệnh reset; và checklist cost/shutdown. AWS là bước kiểm chứng môi trường mới, không phải nơi để tìm hiểu lần đầu.
+
+5. Kiến trúc
+Request -> trace/log/metric -> dashboard/alertFailure -> incident -> runbook -> postmortem -> backlog
+
+Giải thích sơ đồ
+Hãy đọc sơ đồ theo hai chiều: mũi tên ngang mô tả request/data/control path; bảng giải thích boundary và trade-off để bạn biết phase đang chứng minh điều gì, không chỉ biết tên tool.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Request -> trace/log/metric -> dashboard/alert
+Một operation phát ra ba loại tín hiệu: timeline chi tiết, sự kiện, số liệu xu hướng.
+Tìm root cause tốt hơn; telemetry có overhead và privacy/cost.
+Failure -> incident -> runbook -> postmortem -> backlog
+Lỗi được xử lý, ghi lại nguyên nhân và chuyển prevention thành task có owner.
+Biến sự cố thành learning; cần kỷ luật và không đổ lỗi cá nhân.
+6. Folder structure
+monitoring/{prometheus,grafana,otel}docs/runbooks/docs/postmortems/docs/portfolio/
+
+7. Code cần viết
+Instrument API/DB/Redis/MQ/worker/S3, build dashboard, run 20 failures, document evidence.
+8. Configuration cần làm
+Tạo cấu hình riêng cho local/test/staging; tất cả secret đi qua environment hoặc secret manager. Trong phase này cần có config validation, timeout rõ ràng và log không chứa credential. Sampling, metric labels, alert thresholds, retention, runbook URLs.
+9. Database cần thay đổi
+Metric/incident tables nếu cần; lưu report ra docs, không biến observability thành CRUD.
+10. API cần tạo
+/actuator/prometheus; /health; audit/metrics evidence endpoints only if needed
+11. Network cần hiểu
+OTLP transport, metric scrape, log shipping, trace propagation.
+12. Security cần làm
+Threat model update, incident access control, audit evidence, postmortem redaction.
+13. Docker cần làm
+Capture image digest and SBOM in portfolio.
+14. AWS cần làm nếu có
+CloudWatch logs/alarms only for selected evidence.
+15. Monitoring cần thêm
+Full dashboard, SLO, alerts, traces, logs, runbooks.
+16. Test cần viết
+k6 load, trace continuity, alert firing, 20 failure evidence.
+17. Failure scenario
+Any of the 20 failure cards with evidence and postmortem.
+18. Lab thực hành
+Run load and failure matrix; create dashboard and postmortems.
+18.1 Quy trình triển khai chi tiết
+Bước 1. Chốt mục tiêu nhỏ của phase 14: viết rõ input, output, invariant, giới hạn scope và một câu hỏi kiến trúc cần trả lời.
+Bước 2. Đọc tài liệu khái niệm và sơ đồ; tự giải thích component/mũi tên bằng lời của mình trước khi gõ code.
+Bước 3. Implement vertical slice trên local; chạy từ trạng thái rỗng bằng README và ghi command/output quan trọng.
+Bước 4. Viết test cho happy path, invalid input, permission/boundary và persistence/message contract phù hợp phase.
+Bước 5. Tạo ít nhất một failure có kiểm soát; thu metrics/logs/traces, phân biệt symptom với root cause và viết timeline.
+Bước 6. Debug bằng một hypothesis mỗi lần; chỉ sửa sau khi có evidence xác nhận; cập nhật runbook nếu cách xử lý lặp lại.
+Bước 7. Optimize sau baseline: thay một biến, đo trước/sau, ghi trade-off và ngưỡng không được vượt.
+Bước 8. Chụp artifact: diagram, test report, benchmark, dashboard, failure card, ADR và demo script.
+Bước 9. Chỉ sau khi local gate xanh mới map component sang AWS; ghi network/security/cost difference và chạy cloud lab ngắn.
+Điểm kiểm tra mentor của phase 14: Trace nào chứng minh queue backlog hay slow query là root cause? Ngoài câu trả lời, phải chỉ ra file/code/config/log/metric nào làm bằng chứng.
+19. Deliverables
+README honest, diagrams, runbooks, cost/performance report, postmortems, demo video script.
+20. Definition of Done
+Trace nào chứng minh queue backlog hay slow query là root cause?
+21. Câu hỏi kiểm tra kiến thức
+Trace nào chứng minh queue backlog hay slow query là root cause? Hãy trả lời bằng diagram hoặc evidence, không chỉ định nghĩa.
+22. Lỗi người mới thường mắc
+Mở rộng scope trước khi có vertical slice.
+Dùng retry vô hạn hoặc không có timeout.
+Log secret/token và coi đó là debug bình thường.
+Chỉ test happy path, không test restart/duplicate/permission.
+Để resource AWS chạy vì quên destroy.
+23. Đọc thêm
+Spring Boot Reference và Spring Security Reference.
+PostgreSQL documentation: transaction, EXPLAIN, indexes, locks.
+RabbitMQ Tutorials và consumer acknowledgements.
+AWS VPC, IAM, S3, RDS, EC2 và Budgets documentation.
+OpenTelemetry, Prometheus, Kubernetes Concepts và OWASP Top 10.
+12. Documentation, portfolio và interview preparation
+12.1 Documentation tree
+docs/├── architecture/│   ├── overall.md│   ├── network.md│   ├── request-flow.md│   └── failure-recovery.md├── adr/├── api/openapi.yaml├── database/schema.md├── security/threat-model.md├── deployment/local.md├── deployment/aws.md├── deployment/terraform.md├── deployment/kubernetes.md├── monitoring/dashboard.md├── runbooks/incident-*.md├── disaster-recovery.md├── cost-report.md├── performance-report.md└── postmortems/
+
+12.2 README structure
+Problem statement and workload.
+Architecture diagram and request/job/file flows.
+Feature list with implemented status.
+Local setup and commands.
+Configuration and secret policy.
+Test strategy and evidence.
+Observability screenshots and metric definitions.
+Failure lab index and postmortems.
+AWS resources, cost guardrail and destroy procedure.
+Known limitations and future architecture decisions.
+12.3 CV bullet templates - chỉ dùng sau khi có evidence
+Năng lực thật
+Bullet có thể dùng sau khi implement
+Backend
+Built a Java/Spring Boot modular monolith for multi-tenant workflow and background job execution, with validation, transaction boundaries and REST APIs.
+Distributed systems
+Implemented RabbitMQ work processing with an outbox publisher, retries, dead-letter handling and idempotent worker execution.
+Cloud/DevOps
+Provisioned a tagged AWS lab with Terraform and deployed immutable Docker artifacts through a GitHub Actions pipeline with health checks and rollback.
+Observability/SRE
+Instrumented request, database, cache, broker and worker spans with OpenTelemetry and built dashboards for latency, errors, queue depth and throughput.
+Security
+Applied tenant-scoped RBAC, hashed API keys, token rotation, private S3 access, container hardening and security failure labs.
+Không ghi “highly available”, “production-ready” hoặc con số throughput nếu chưa có test, environment, duration và evidence kèm theo.
+12.4 Demo scenario
+Login as project operator.
+Create workflow version 1 with validate/transform/report steps.
+Upload CSV through presigned URL.
+Submit job and show 202 response plus execution history.
+Kill a worker during processing; show retry and idempotent result.
+Open Grafana to show trace, queue depth and worker throughput.
+Trigger a bad deployment and rollback to immutable image.
+Open postmortem and explain prevention.
+12.5 Interview questions
+Nhóm
+Câu hỏi
+Request path
+DNS, TCP, TLS, ALB, reverse proxy và application xử lý request theo thứ tự nào?
+Database
+Tại sao submit job cần transaction? Index nào phục vụ GET jobs theo project?
+Queue
+At-least-once tạo duplicate thế nào? Idempotency key nằm ở đâu?
+Cache
+Nếu Redis stale hoặc unavailable, consistency và latency thay đổi thế nào?
+Reliability
+Bạn đặt timeout/retry/circuit breaker ở đâu và tránh retry storm ra sao?
+Deployment
+Readiness khác liveness thế nào? Rollback cần giữ artifact nào?
+Security
+Làm sao chứng minh tenant A không đọc được job của tenant B?
+Cost
+Tại sao không chạy NAT Gateway/EKS/RDS 24/7 cho lab này?
+13. Learning map và operating checklist
+Java  ↓Backend  ↓Linux  ↓Network  ↓Database  ↓Distributed Systems  ↓Docker  ↓Cloud/AWS  ↓Terraform  ↓Kubernetes  ↓CI/CD  ↓Security  ↓Observability  ↓SRE  ↓System Design
+
+Giải thích sơ đồ
+Mũi tên là dependency học tập chứ không phải thứ tự cứng tuyệt đối. Bạn có thể học song song, nhưng không nên triển khai lớp sau để che một lỗ hổng hiểu biết ở lớp trước.
+Thành phần / mũi tên
+Cách hoạt động và luồng
+Tại sao cần / trade-off
+Java -> Backend
+Java giúp hiểu runtime/thread/heap; backend biến runtime thành HTTP/API/domain behavior.
+Học ngôn ngữ trước framework giúp debug sâu; chậm hơn việc copy starter code.
+Linux -> Network -> Database
+Process/port/file làm nền; network giải thích request tới đâu; DB lưu state cần bền.
+Các lớp này giúp đọc failure thật; cần học bằng command và lab, không chỉ xem video.
+Distributed Systems -> Docker -> Cloud/AWS
+Failure, retry, ordering được đóng gói local rồi đưa vào network/resource boundary cloud.
+Tạo tiến hóa tự nhiên; Cloud trước khi local rõ sẽ khó phân biệt lỗi.
+Terraform -> Kubernetes -> CI/CD
+IaC tạo hạ tầng repeatable; orchestration chạy workload; pipeline đưa artifact qua môi trường.
+Tự động hóa mạnh; state, rollout, secret và policy tạo complexity cần kiểm soát.
+Security -> Observability -> SRE -> System Design
+Bảo vệ boundary, thu evidence, vận hành theo SLO/RTO/RPO rồi mới tối ưu trade-off toàn hệ thống.
+Đây là năng lực tổng hợp; không thể chỉ học tool riêng lẻ.
+Node
+Cần biết
+Liên quan node trước
+Dùng trong AtlasFlow
+Java
+Thread, heap, exception, I/O
+Nền tảng runtime
+API/worker
+Backend
+HTTP, REST, transaction, validation
+Biến runtime thành service
+API contract
+Linux
+Process, signal, port, file, permission
+Chạy và debug service
+Docker/EC2
+Network
+DNS, TCP, TLS, routing, NAT, firewall
+Request rời client và đến service
+ALB/SG/Service
+Database
+Transaction, index, lock, pool
+Service cần durable state
+Job state/audit
+Distributed
+Retry, ordering, idempotency, failure
+Một request không còn một process
+RabbitMQ/worker
+Docker
+Image, process, namespace, network
+Đóng gói service
+Compose/CI
+Cloud
+VPC, EC2, ALB, RDS, S3, IAM
+Đưa boundary lên AWS
+Cloud lab
+Terraform
+State/module/drift
+Tạo cloud repeatably
+Infrastructure
+Kubernetes
+Scheduling/probes/rollout/RBAC
+Quản lý nhiều container
+Local cluster
+CI/CD
+Artifact/env/deploy/rollback
+Biến code thành release
+GitHub Actions
+Security
+Identity, tenant, secret, attack
+Bảo vệ mọi boundary
+RBAC/S3/IAM
+Observability
+Metrics/logs/traces
+Có evidence để debug
+Grafana/OTel
+SRE
+SLO, error budget, RTO/RPO
+Chọn mức reliability có trade-off
+Runbook/postmortem
+System Design
+Capacity, trade-off, scale
+Tổng hợp mọi lớp
+Architecture review
+13.1 Phase completion checklist
+Tôi có thể vẽ request flow của phase mà không nhìn tài liệu.
+Tôi có test chứng minh happy path và ít nhất một failure path.
+Tôi biết state/data/packet nằm ở đâu trong lúc chạy.
+Tôi có metric/log/trace hoặc evidence phù hợp với phase.
+Tôi có security control và negative test.
+Tôi đã ghi lại trade-off trong ADR hoặc engineering note.
+Tôi biết cách reset/destroy lab và không để resource ngoài ý muốn.
+Tôi có Definition of Done rõ và backlog được cắt cho phase sau.
+13.2 Trước mỗi AWS lab
+Trước
+Trong khi chạy
+Sau
+Đặt budget/tag; ghi mục tiêu, resource, start time và expected evidence.
+Theo dõi billing/resource state; chụp metric; không để credential trong terminal log.
+Export evidence; stop/terminate/destroy; kiểm tra VPC, EBS, snapshots, ALB, NAT, logs còn sót.
+13.3 Final definition of done
+Một workflow demo chạy end-to-end từ upload đến kết quả S3.
+Có auth/RBAC/tenant isolation và test unauthorized.
+Có transaction, outbox, retry, DLQ, idempotency và worker recovery.
+Có Docker Compose local và Kubernetes local với probes/rollback.
+Có Terraform cho cloud lab đã được apply và destroy thành công.
+Có CI/CD test/scan/build/deploy/rollback.
+Có metrics/logs/traces và dashboard.
+Có tối thiểu 20 failure cards, runbooks và postmortems.
+README/CV chỉ nói đúng thứ đã thực sự implement.
+Phụ lục: glossary, commands, runbook và nguồn đọc
+A. Glossary ngắn
+Thuật ngữ
+Ý nghĩa trong AtlasFlow
+At-least-once
+Message có thể được giao nhiều lần; consumer phải idempotent.
+Backpressure
+Giới hạn tốc độ nhận/xử lý khi downstream không theo kịp.
+DLQ
+Nơi giữ message không xử lý được sau policy retry.
+Idempotency
+Lặp cùng operation không tạo side effect sai hoặc duplicate.
+Outbox
+Ghi event trong cùng transaction với state trước khi publish.
+Readiness
+Pod có thể nhận traffic hay chưa.
+Liveness
+Process còn sống hay cần restart.
+SLO
+Mục tiêu reliability đo được, không phải khẩu hiệu.
+RTO/RPO
+Thời gian khôi phục và lượng dữ liệu có thể mất.
+B. Network command checklist
+# DNSnslookup example.comdig example.com# HTTP/TLScurl -v https://host/actuator/healthcurl -I https://host# Local interfaces/routesipconfigip addrip route# Sockets/processesss -tulpnnetstat -ano# Path/packetstraceroute example.comtracert example.comsudo tcpdump -i any port 8080# Kuberneteskubectl get pods -Akubectl describe pod <name>kubectl logs <pod>kubectl rollout status deployment/apikubectl rollout undo deployment/api
+
+C. Incident runbook skeleton
+Bước
+Hành động
+1
+Declare incident: scope, severity, incident commander, start time.
+2
+Confirm symptom from user and metrics; avoid changing multiple variables.
+3
+Check recent deploy, dependency health, saturation, error logs and trace IDs.
+4
+Apply reversible mitigation: rollback, disable feature, reduce load, restart only with evidence.
+5
+Verify recovery with user flow, health, latency, queue depth and error rate.
+6
+Write postmortem: root cause, contributing factors, detection, prevention and owner/date.
+D. Nguồn đọc chính thức
+Spring Boot Reference: https://docs.spring.io/spring-boot/reference/
+Spring Security Reference: https://docs.spring.io/spring-security/reference/
+PostgreSQL Documentation: https://www.postgresql.org/docs/
+RabbitMQ Tutorials: https://www.rabbitmq.com/tutorials
+Docker Documentation: https://docs.docker.com/
+Kubernetes Concepts: https://kubernetes.io/docs/concepts/
+Terraform Documentation: https://developer.hashicorp.com/terraform/docs
+AWS VPC User Guide: https://docs.aws.amazon.com/vpc/latest/userguide/
+AWS Budgets: https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-create.html
+AWS NAT Gateway pricing: https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-pricing.html
+AWS RDS PostgreSQL pricing: https://aws.amazon.com/rds/postgresql/pricing/
+OpenTelemetry Documentation: https://opentelemetry.io/docs/
+Prometheus Documentation: https://prometheus.io/docs/
+OWASP Top 10: https://owasp.org/www-project-top-ten/
+Lời kết
+Đừng đo tiến bộ bằng số lượng tool đã cài. Hãy đo bằng khả năng giải thích request, chứng minh failure, đọc trace, tìm bottleneck, sửa security bug và khôi phục hệ thống với cost có kiểm soát.
+

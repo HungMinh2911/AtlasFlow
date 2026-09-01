@@ -21,7 +21,7 @@ public class WorkflowStepController {
 
     @PostMapping
     public WorkflowStepResponse createWorkflowStep(
-            @PathVariable UUID workflowId,
+            @PathVariable("workflowId") UUID workflowId,
             @Valid @RequestBody CreateWorkflowStepRequest request
     ) {
         return workflowStepApplicationService.createWorkflowStep(
@@ -30,7 +30,9 @@ public class WorkflowStepController {
         );
     }
     @GetMapping
-    public List<WorkflowStepResponse> getListWorkflowStep(@PathVariable UUID workflowId){
+    public List<WorkflowStepResponse> getListWorkflowStep(
+            @PathVariable("workflowId") UUID workflowId
+    ) {
         return workflowStepApplicationService.responseList(workflowId);
     }
 }

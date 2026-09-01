@@ -2,24 +2,45 @@ package com.atlasflow.shared.error;
 
 import com.atlasflow.file.domain.FileNotFoundException;
 import com.atlasflow.job.domain.JobValidationException;
+import com.atlasflow.job.domain.IdempotencyKeyReusedException;
 import com.atlasflow.job.domain.JobNotFoundException;
 import com.atlasflow.job.execution.domain.JobExecutionNotFoundException;
 import com.atlasflow.file.domain.FileUploadException;
 import com.atlasflow.file.domain.InvalidFileException;
 import com.atlasflow.project.domain.ProjectNameAlreadyExistsException;
 import com.atlasflow.project.domain.ProjectNotExistsException;
+import com.atlasflow.ratelimit.RateLimitExceededException;
+import com.atlasflow.ratelimit.RateLimitUnavailableException;
 import com.atlasflow.workflow.domain.WorkflowNotFoundException;
 import com.atlasflow.workflow.step.domain.InvalidWorkflowStepConfigException;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ProblemDetail handleMissingRequestHeader(
+            MissingRequestHeaderException exception,
+            HttpServletRequest request
+    ) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                exception.getHeaderName() + " header is required"
+        );
+        problemDetail.setTitle("Missing request header");
+        problemDetail.setProperty("code", "VALIDATION_ERROR");
+        problemDetail.setProperty("request_id", request.getHeader("X-Request-Id"));
+        return problemDetail;
+    }
 
     @ExceptionHandler(ProjectNameAlreadyExistsException.class)
     public ProblemDetail handProjectNameExists(
@@ -181,6 +202,21 @@ public class GlobalExceptionHandler {
         return problemDetail;
     }
 
+    @ExceptionHandler(IdempotencyKeyReusedException.class)
+    public ProblemDetail handleIdempotencyKeyReused(
+            IdempotencyKeyReusedException exception,
+            HttpServletRequest request
+    ) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                "The Idempotency-Key was already used with a different request"
+        );
+        problemDetail.setTitle("Idempotency key reused");
+        problemDetail.setProperty("code", "IDEMPOTENCY_KEY_REUSED");
+        problemDetail.setProperty("request_id", request.getHeader("X-Request-Id"));
+        return problemDetail;
+    }
+
     @ExceptionHandler(JobExecutionNotFoundException.class)
     public ProblemDetail handleJobExecutionNotFound(
             JobExecutionNotFoundException notFoundException,
@@ -274,7 +310,7 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
-                HttpStatus.BAD_REQUEST,
+                HttpStatus.CONFLICT,
                 exception.getMessage()
         );
 
@@ -285,6 +321,60 @@ public class GlobalExceptionHandler {
                 request.getHeader("X-Request-Id")
         );
 
+        return problemDetail;
+    }
+
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ProblemDetail handleAccessDenied(
+            org.springframework.security.access.AccessDeniedException exception,
+            HttpServletRequest request
+    ) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.FORBIDDEN,
+                exception.getMessage() != null ? exception.getMessage() : "Access denied"
+        );
+        problemDetail.setTitle("Access denied");
+        problemDetail.setProperty("code", "ACCESS_DENIED");
+        problemDetail.setProperty("request_id", request.getHeader("X-Request-Id"));
+        return problemDetail;
+    }
+
+    @ExceptionHandler(SecurityException.class)
+    public ProblemDetail handleSecurityException(
+            SecurityException exception,
+            HttpServletRequest request
+    ) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.FORBIDDEN,
+                exception.getMessage()
+        );
+        problemDetail.setTitle("Security violation");
+        problemDetail.setProperty("code", "TOKEN_REPLAY_DETECTED");
+        problemDetail.setProperty("request_id", request.getHeader("X-Request-Id"));
+        return problemDetail;
+    }
+
+    @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
+    public ProblemDetail handleAuthenticationException(
+            org.springframework.security.core.AuthenticationException exception,
+            HttpServletRequest request
+    ) {
+        String errorCode = "AUTH_FAILED";
+        if (exception instanceof org.springframework.security.authentication.BadCredentialsException) {
+            errorCode = "AUTH_INVALID_CREDENTIALS";
+        } else if (exception instanceof org.springframework.security.authentication.LockedException) {
+            errorCode = "AUTH_ACCOUNT_LOCKED";
+        } else if (exception instanceof org.springframework.security.authentication.DisabledException) {
+            errorCode = "AUTH_ACCOUNT_DISABLED";
+        }
+
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNAUTHORIZED,
+                exception.getMessage()
+        );
+        problemDetail.setTitle("Authentication failed");
+        problemDetail.setProperty("code", errorCode);
+        problemDetail.setProperty("request_id", request.getHeader("X-Request-Id"));
         return problemDetail;
     }
 
@@ -306,5 +396,58 @@ public class GlobalExceptionHandler {
         );
 
         return problemDetail;
+    }
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ProblemDetail> handleRateLimitExceeded(
+            RateLimitExceededException exception,
+            HttpServletRequest request
+    ) {
+        ProblemDetail problemDetail =
+                ProblemDetail.forStatusAndDetail(
+                        HttpStatus.TOO_MANY_REQUESTS,
+                        "Rate limit exceeded. Retry later."
+                );
+
+        problemDetail.setTitle("Too Many Requests");
+        problemDetail.setProperty(
+                "code",
+                "RATE_LIMIT_EXCEEDED"
+        );
+        problemDetail.setProperty(
+                "request_id",
+                request.getHeader("X-Request-Id")
+        );
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Retry-After", String.valueOf(
+                exception.retryAfterSeconds()
+        ));
+
+        return new ResponseEntity<>(
+                problemDetail,
+                headers,
+                HttpStatus.TOO_MANY_REQUESTS
+        );
+    }
+
+    @ExceptionHandler(RateLimitUnavailableException.class)
+    public ResponseEntity<ProblemDetail> handleRateLimitUnavailable(
+            RateLimitUnavailableException exception,
+            HttpServletRequest request
+    ) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "Rate-limit service is temporarily unavailable"
+        );
+        problemDetail.setTitle("Service Unavailable");
+        problemDetail.setProperty("code", "RATE_LIMIT_UNAVAILABLE");
+        problemDetail.setProperty(
+                "request_id",
+                request.getHeader("X-Request-Id")
+        );
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(problemDetail);
     }
 }

@@ -36,6 +36,7 @@ The local phase-2 simulation uses:
 
 ```text
 POST /api/v1/jobs
+POST /api/v1/workflows/{workflowId}/publish
 POST /api/v1/jobs/{jobId}/queue
 POST /api/v1/job-executions
 PATCH /api/v1/job-executions/{executionId}/finish
@@ -61,7 +62,9 @@ POST /api/v1/jobs
 
 - Bean validation returns HTTP 400 with `VALIDATION_ERROR`.
 - Missing resources return HTTP 404 with a module-specific error code.
-- Invalid business state returns HTTP 400.
+- Invalid business state returns HTTP 409.
+- `POST /api/v1/jobs` requires `Idempotency-Key` and returns HTTP 202.
+- Reusing the same key with the same payload replays the existing job; reusing it with a different payload returns HTTP 409.
 - Unexpected errors do not expose stack traces or secrets.
 - Every response has an `X-Request-Id`; a caller-provided value is preserved.
 - Basic security headers are added by `RequestIdFilter`.
@@ -97,5 +100,5 @@ controller validation, request ID propagation and failure cases.
 ## Phase 2 gate
 
 The backend runs locally with no RabbitMQ or AWS dependency. The next phase is
-PostgreSQL persistence. RabbitMQ and Outbox belong to Phase 6, and the real
-worker process belongs to Phase 7.
+PostgreSQL persistence. The outbox record is deferred until Phase 3. RabbitMQ
+and the real worker process belong to Phase 6-7.

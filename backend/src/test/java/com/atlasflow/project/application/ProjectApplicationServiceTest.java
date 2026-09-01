@@ -12,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.junit.jupiter.api.extension.ExtendWith;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,8 +20,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ProjectApplicationServiceTest {
@@ -28,10 +28,13 @@ class ProjectApplicationServiceTest {
     @Mock
     private ProjectRepository projectRepository;
 
+    @Mock
+    private ProjectCacheService projectCacheService;
+
     @Test
     void createProjectShouldTrimNameAndSaveActiveProject() {
         ProjectApplicationService service =
-                new ProjectApplicationService(projectRepository);
+                new ProjectApplicationService(projectRepository, projectCacheService);
         UUID organizationId = UUID.randomUUID();
 
         when(projectRepository.existsByOrganizationIdAndName(
@@ -52,12 +55,13 @@ class ProjectApplicationServiceTest {
                 ArgumentCaptor.forClass(Project.class);
         verify(projectRepository).save(captor.capture());
         assertEquals("AtlasFlow", captor.getValue().name());
+        verify(projectCacheService).putProjectToCache(any(ProjectResponse.class));
     }
 
     @Test
     void createProjectShouldRejectDuplicateNameInSameOrganization() {
         ProjectApplicationService service =
-                new ProjectApplicationService(projectRepository);
+                new ProjectApplicationService(projectRepository, projectCacheService);
         UUID organizationId = UUID.randomUUID();
 
         when(projectRepository.existsByOrganizationIdAndName(
@@ -76,7 +80,7 @@ class ProjectApplicationServiceTest {
     @Test
     void getProjectsShouldMapAllProjectsToResponses() {
         ProjectApplicationService service =
-                new ProjectApplicationService(projectRepository);
+                new ProjectApplicationService(projectRepository, projectCacheService);
         Project project = Project.create(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
@@ -92,11 +96,59 @@ class ProjectApplicationServiceTest {
     }
 
     @Test
+    void getProjectShouldReturnFromCacheWhenPresent() {
+        ProjectApplicationService service =
+                new ProjectApplicationService(projectRepository, projectCacheService);
+        UUID projectId = UUID.randomUUID();
+        ProjectResponse cachedResponse = new ProjectResponse(
+                projectId,
+                UUID.randomUUID(),
+                "Cached Project",
+                "ACTIVE",
+                LocalDateTime.now()
+        );
+
+        when(projectCacheService.getProjectFromCache(projectId))
+                .thenReturn(Optional.of(cachedResponse));
+
+        ProjectResponse response = service.getProject(projectId);
+
+        assertEquals("Cached Project", response.name());
+        verify(projectCacheService).getProjectFromCache(projectId);
+        verifyNoInteractions(projectRepository);
+    }
+
+    @Test
+    void getProjectShouldFetchFromDbAndCacheWhenMiss() {
+        ProjectApplicationService service =
+                new ProjectApplicationService(projectRepository, projectCacheService);
+        UUID projectId = UUID.randomUUID();
+        Project project = Project.create(
+                projectId,
+                UUID.randomUUID(),
+                "DB Project"
+        );
+
+        when(projectCacheService.getProjectFromCache(projectId))
+                .thenReturn(Optional.empty());
+        when(projectRepository.findProjectById(projectId))
+                .thenReturn(Optional.of(project));
+
+        ProjectResponse response = service.getProject(projectId);
+
+        assertEquals("DB Project", response.name());
+        verify(projectRepository).findProjectById(projectId);
+        verify(projectCacheService).putProjectToCache(any(ProjectResponse.class));
+    }
+
+    @Test
     void getProjectShouldRejectUnknownId() {
         ProjectApplicationService service =
-                new ProjectApplicationService(projectRepository);
+                new ProjectApplicationService(projectRepository, projectCacheService);
         UUID projectId = UUID.randomUUID();
 
+        when(projectCacheService.getProjectFromCache(projectId))
+                .thenReturn(Optional.empty());
         when(projectRepository.findProjectById(projectId))
                 .thenReturn(Optional.empty());
 
