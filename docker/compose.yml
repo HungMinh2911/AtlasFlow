@@ -23,6 +23,21 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+  rabbitmq:
+    image : rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+        RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-atlasflow}
+        RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-123456}
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+
 
 
 volumes:

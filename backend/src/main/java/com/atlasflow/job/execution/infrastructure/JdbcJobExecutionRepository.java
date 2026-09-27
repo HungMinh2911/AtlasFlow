@@ -95,4 +95,77 @@ public class JdbcJobExecutionRepository implements JobExecutionRepository {
 
         return jobExecution;
     }
+
+    @Override
+    public JobExecution saveIfAbsent(JobExecution jobExecution) {
+        String sql = """
+            INSERT INTO job_executions (id, job_id, attempt, status, worker_id, started_at, finished_at)
+            VALUES (:id, :jobId, :attempt, :status, :workerId, :startedAt, :finishedAt)
+            ON CONFLICT (job_id, attempt) DO NOTHING
+        """;
+
+        jdbcClient.sql(sql)
+                .param("id", jobExecution.id())
+                .param("jobId", jobExecution.jobId())
+                .param("attempt", jobExecution.attempt())
+                .param("status", jobExecution.status().name())
+                .param("workerId", jobExecution.workerId())
+                .param("startedAt", jobExecution.startAt() != null ? Timestamp.valueOf(jobExecution.startAt()) : null)
+                .param("finishedAt", jobExecution.finishedAt() != null ? Timestamp.valueOf(jobExecution.finishedAt()) : null)
+                .update();
+
+        return findByJobIdAndAttempt(jobExecution.jobId(), jobExecution.attempt())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Execution was not inserted or found for job " + jobExecution.jobId()
+                ));
+    }
+
+    @Override
+    public Optional<JobExecution> findByJobIdAndAttempt(UUID jobId, int attempt) {
+        String sql = """
+            SELECT id, job_id, attempt, status, worker_id, started_at, finished_at
+            FROM job_executions
+            WHERE job_id = :jobId AND attempt = :attempt
+        """;
+
+        return jdbcClient.sql(sql)
+                .param("jobId", jobId)
+                .param("attempt", attempt)
+                .query(this::mapRow)
+                .optional();
+    }
+
+    @Override
+    public boolean findByJobId(UUID jobId) {
+        String sql = """
+        SELECT EXISTS(
+            SELECT 1
+            FROM job_executions
+            WHERE job_id = :jobId
+        )
+    """;
+
+        return jdbcClient.sql(sql)
+                .param("jobId", jobId)
+                .query(Integer.class)
+                .optional()
+                .isPresent();
+    }
+
+    @Override
+    public Optional<JobExecution> findLatestByJobId(UUID jobId) {
+        String sql = """
+            SELECT id, job_id, attempt, status, worker_id, started_at, finished_at
+            FROM job_executions
+            WHERE job_id = :jobId
+            ORDER BY attempt DESC
+            LIMIT 1
+        """;
+
+        return jdbcClient.sql(sql)
+                .param("jobId", jobId)
+                .query(this::mapRow)
+                .optional();
+    }
+
 }

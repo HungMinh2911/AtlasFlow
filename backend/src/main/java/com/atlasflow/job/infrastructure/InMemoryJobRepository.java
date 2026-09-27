@@ -2,6 +2,7 @@ package com.atlasflow.job.infrastructure;
 
 import com.atlasflow.job.application.port.JobRepository;
 import com.atlasflow.job.domain.Job;
+import com.atlasflow.job.domain.JobStatus;
 import org.springframework.stereotype.Repository;
 
 import java.util.Map;
@@ -49,5 +50,16 @@ public class InMemoryJobRepository implements JobRepository {
     public Optional<Job> findById(UUID id) {
         return Optional.ofNullable(jobs.get(id));
 
+    }
+
+    @Override
+    public synchronized int updateStatusToRunning(UUID jobId) {
+        Job job = jobs.get(jobId);
+        if (job == null || job.status() != JobStatus.QUEUED) {
+            return 0;
+        }
+
+        jobs.put(jobId, job.startRun());
+        return 1;
     }
 }

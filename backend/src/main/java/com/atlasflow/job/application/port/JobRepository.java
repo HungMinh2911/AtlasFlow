@@ -18,4 +18,7 @@ public interface JobRepository {
     }
 
     Optional<Job> findById (UUID id);
+
+    int updateStatusToRunning(UUID jobId);
+
 }

@@ -11,7 +11,11 @@ public record OutboxEvents(
         UUID aggregate_id,
         String event_type,
         JsonNode payload,
-        LocalDateTime published_at
+        LocalDateTime occurred_at,
+        String correlation_id,
+        LocalDateTime published_at,
+        int delivery_attempts,
+        String last_error
 ) {
     public static OutboxEvents create (
             String aggregate_type,
@@ -25,6 +29,10 @@ public record OutboxEvents(
                 aggregate_id,
                 event_type,
                 payload,
+                LocalDateTime.now(),
+                UUID.randomUUID().toString(),
+                null,
+                0,
                 null
         );
     }

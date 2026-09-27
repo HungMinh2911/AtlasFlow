@@ -57,9 +57,9 @@ class JobExecutionApplicationServiceTest {
                 .thenReturn(Optional.of(queuedJob));
         when(executionRepository.max_attempt(jobId))
                 .thenReturn(1);
-        when(jobRepository.save(any(Job.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        when(executionRepository.save(any(JobExecution.class)))
+        when(jobRepository.updateStatusToRunning(jobId))
+                .thenReturn(1);
+        when(executionRepository.saveIfAbsent(any(JobExecution.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         JobExecutionResponse response = service.createJobExecution(
@@ -71,13 +71,11 @@ class JobExecutionApplicationServiceTest {
         assertEquals(JobExecutionStatus.RUNNING, response.status());
         assertEquals("local_worker_1", response.workerId());
 
-        ArgumentCaptor<Job> jobCaptor = ArgumentCaptor.forClass(Job.class);
-        verify(jobRepository).save(jobCaptor.capture());
-        assertEquals(JobStatus.RUNNING, jobCaptor.getValue().status());
+        verify(jobRepository).updateStatusToRunning(jobId);
 
         ArgumentCaptor<JobExecution> executionCaptor =
                 ArgumentCaptor.forClass(JobExecution.class);
-        verify(executionRepository).save(executionCaptor.capture());
+        verify(executionRepository).saveIfAbsent(executionCaptor.capture());
         assertEquals(jobId, executionCaptor.getValue().jobId());
         assertEquals(JobExecutionStatus.RUNNING,
                 executionCaptor.getValue().status());

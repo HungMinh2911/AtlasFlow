@@ -35,4 +35,38 @@ public class InMemoryJobExecutionRepository implements JobExecutionRepository {
         return jobExcution;
     }
 
+    @Override
+    public JobExecution saveIfAbsent(JobExecution jobExecution) {
+        Optional<JobExecution> existing =
+                findByJobIdAndAttempt(jobExecution.jobId(), jobExecution.attempt());
+
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        jobExcutionMap.put(jobExecution.id(), jobExecution);
+        return jobExecution;
+    }
+
+    @Override
+    public boolean findByJobId(UUID jobId) {
+        return jobExcutionMap.values().stream()
+                .anyMatch(execution -> execution.jobId().equals(jobId));
+    }
+
+    @Override
+    public Optional<JobExecution> findLatestByJobId(UUID jobId) {
+        return jobExcutionMap.values().stream()
+                .filter(execution -> execution.jobId().equals(jobId))
+                .max(java.util.Comparator.comparingInt(JobExecution::attempt));
+    }
+
+    @Override
+    public Optional<JobExecution> findByJobIdAndAttempt(UUID jobId, int attempt) {
+        return jobExcutionMap.values().stream()
+                .filter(execution -> execution.jobId().equals(jobId))
+                .filter(execution -> execution.attempt() == attempt)
+                .findFirst();
+    }
+
 }

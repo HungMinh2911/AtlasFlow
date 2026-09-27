@@ -32,6 +32,7 @@ public class JdbcOutboxEventsRepository implements OutboxEventsRepository {
 
         String rawJson = rs.getString("payload");
         JsonNode payload = null;
+        Timestamp occurredAt = rs.getTimestamp("occurred_at");
         Timestamp publishedAt = rs.getTimestamp("published_at");
 
         if (rawJson != null) {
@@ -48,9 +49,15 @@ public class JdbcOutboxEventsRepository implements OutboxEventsRepository {
                 rs.getObject("aggregate_id", UUID.class),
                 rs.getString("event_type"),
                 payload,
+                occurredAt != null
+                        ? occurredAt.toInstant().atZone(ZoneOffset.UTC).toLocalDateTime()
+                        : LocalDateTime.now(),
+                rs.getString("correlation_id"),
                 publishedAt != null
                         ? publishedAt.toInstant().atZone(ZoneOffset.UTC).toLocalDateTime()
-                        : null
+                        : null,
+                rs.getInt("delivery_attempts"),
+                rs.getString("last_error")
         );
     }
 
@@ -60,13 +67,23 @@ public class JdbcOutboxEventsRepository implements OutboxEventsRepository {
         String payloadJson = events.payload() != null ? events.payload().toString() : "{}";
 
         String sql = """
-                INSERT INTO outbox_events (id, aggregate_type, aggregate_id, event_type, payload, published_at)
-                VALUES (:id, :aggregate_type, :aggregate_id, :event_type, :payload::jsonb, :published_at)
+                INSERT INTO outbox_events (
+                    id, aggregate_type, aggregate_id, event_type, payload,
+                    occurred_at, correlation_id, published_at, delivery_attempts, last_error
+                )
+                VALUES (
+                    :id, :aggregate_type, :aggregate_id, :event_type, :payload::jsonb,
+                    :occurred_at, :correlation_id, :published_at, :delivery_attempts, :last_error
+                )
                 ON CONFLICT (id) DO UPDATE
                     SET aggregate_type = EXCLUDED.aggregate_type,
                         event_type = EXCLUDED.event_type,
                         payload = EXCLUDED.payload,
-                        published_at = EXCLUDED.published_at
+                        occurred_at = EXCLUDED.occurred_at,
+                        correlation_id = EXCLUDED.correlation_id,
+                        published_at = EXCLUDED.published_at,
+                        delivery_attempts = EXCLUDED.delivery_attempts,
+                        last_error = EXCLUDED.last_error
                 """;
 
         jdbcClient.sql(sql)
@@ -75,7 +92,11 @@ public class JdbcOutboxEventsRepository implements OutboxEventsRepository {
                 .param("aggregate_id", events.aggregate_id())
                 .param("event_type", events.event_type())
                 .param("payload", payloadJson)
+                .param("occurred_at", Timestamp.valueOf(events.occurred_at()))
+                .param("correlation_id", events.correlation_id())
                 .param("published_at", events.published_at() != null ? Timestamp.valueOf(events.published_at()) : null)
+                .param("delivery_attempts", events.delivery_attempts())
+                .param("last_error", events.last_error())
                 .update();
 
         return events;
@@ -84,7 +105,8 @@ public class JdbcOutboxEventsRepository implements OutboxEventsRepository {
     @Override
     public List<OutboxEvents> findUnpublishedEvents(int limit) {
         String sql = """
-                SELECT id, aggregate_type, aggregate_id, event_type, payload, published_at
+                SELECT id, aggregate_type, aggregate_id, event_type, payload,
+                       occurred_at, correlation_id, published_at, delivery_attempts, last_error
                 FROM outbox_events
                 WHERE published_at IS NULL
                 ORDER BY id ASC

@@ -37,6 +37,7 @@ public record Job(
                 LocalDateTime.now()
         );
     }
+
     public Job markQueued() {
         if (status != JobStatus.SUBMITTED) {
             throw new IllegalStateException(
@@ -68,6 +69,25 @@ public record Job(
                 workflowId,
                 fileId,
                 JobStatus.RUNNING,
+                idempotencyKey,
+                requestFingerprint,
+                createdAt
+        );
+    }
+
+    public Job requeueForRetry() {
+        if (status != JobStatus.RUNNING) {
+            throw new IllegalStateException(
+                    "Only RUNNING job can be requeued for retry"
+            );
+        }
+
+        return new Job(
+                id,
+                projectId,
+                workflowId,
+                fileId,
+                JobStatus.QUEUED,
                 idempotencyKey,
                 requestFingerprint,
                 createdAt

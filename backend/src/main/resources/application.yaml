@@ -36,6 +36,23 @@ spring:
       timeout: ${REDIS_TIMEOUT:2s}
       connect-timeout: ${REDIS_CONNECT_TIMEOUT:1s}
 
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:atlasflow}
+    password: ${RABBITMQ_PASSWORD:123456}
+
+    publisher-confirm-type: correlated
+    publisher-returns: true
+
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
+        concurrency: 1
+        max-concurrency: 3
+
+
 jwt:
   secret: ${JWT_SECRET:QXRsYXNGbG93U2VjcmV0S2V5Rm9ySnd0QXV0aGVudGljYXRpb24yMDI2U2VjdXJl}
   issuer: ${JWT_ISSUER:atlasflow_backend}
@@ -58,6 +75,10 @@ app:
 atlasflow:
   storage:
     local-root: ${ATLASFLOW_STORAGE_ROOT:storage/files}
+  outbox:
+    poll-delay-ms: ${OUTBOX_POLL_DELAY_MS:1000}
+    batch-size: ${OUTBOX_BATCH_SIZE:20}
+
 
 management:
   endpoints:

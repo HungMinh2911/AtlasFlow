@@ -135,4 +135,20 @@ public class JdbcJobRepository implements JobRepository {
 
         return job;
     }
+
+    @Override
+    public int  updateStatusToRunning(UUID jobId) {
+        String sql = """
+        UPDATE jobs
+        SET status = 'RUNNING'
+        WHERE id = :jobId
+          AND status = 'QUEUED'
+        """;
+
+         return jdbcClient.sql(sql)
+                .param("jobId", jobId)
+                .update();
+    }
+
+
 }

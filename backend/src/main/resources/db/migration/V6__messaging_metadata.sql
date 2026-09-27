@@ -1,0 +1,13 @@
+ALTER TABLE outbox_events
+    ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ
+    NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE outbox_events
+    ADD COLUMN IF NOT EXISTS correlation_id VARCHAR(255);
+
+ALTER TABLE outbox_events
+    ADD COLUMN IF NOT EXISTS delivery_attempts INTEGER
+    NOT NULL DEFAULT 0;
+
+ALTER TABLE outbox_events
+    ADD COLUMN IF NOT EXISTS last_error TEXT;
