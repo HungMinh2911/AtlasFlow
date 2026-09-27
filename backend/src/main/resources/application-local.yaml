@@ -1,0 +1,14 @@
+spring:
+  config:
+    activate:
+      on-profile: local # cấu hình chỉ áp dụng cho profile local
+                       # chạy app với tham số -Dspring.profiles.active=local
+
+  flyway:
+    # Chỉ local mới chạy seed demo V6. Test/staging/production chỉ chạy migration schema.
+    locations: classpath:db/migration,classpath:db/seed
+
+logging:
+  level:
+    root: INFO
+    com.atlasflow: INFO
